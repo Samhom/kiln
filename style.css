@@ -70,7 +70,8 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
   font-size: 13px;
 }
 .pill:hover { border-color: #6a5648; }
-.pill[aria-selected="true"], .pill.primary { background: var(--ember); border-color: var(--ember); color: var(--ember-ink); }
+.pill[aria-selected="true"], .pill[aria-pressed="true"], .pill.primary { background: var(--ember); border-color: var(--ember); color: var(--ember-ink); }
+.tree-tools, .diff-filters { display: flex; flex-wrap: wrap; gap: 6px; }
 
 main {
   flex: 1;

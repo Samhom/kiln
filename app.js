@@ -18,6 +18,8 @@ const state = {
   sort: null,
   collapsed: new Set(),
   opened: new Set(),
+  expansion: null,
+  diffKind: 'all',
   docs: {
     a: {text: '', parsed: null, note: ''},
     b: {text: '', parsed: null, note: ''}
@@ -54,6 +56,7 @@ const els = {
   find: document.querySelector('#find'),
   findCount: document.querySelector('#find-count'),
   stage: document.querySelector('#stage'),
+  treeTools: document.querySelector('#tree-tools'),
   tabs: [...document.querySelectorAll('[data-view]')]
 };
 
@@ -152,6 +155,7 @@ function invalidate() {
   state.selection = [];
   state.collapsed = new Set();
   state.opened = new Set();
+  state.expansion = null;
   state.sort = null;
   state.hit = 0;
   state.pendingScroll = false;
@@ -198,6 +202,8 @@ function isOpen(pointer, depth, value) {
   if (!isBranch(value) || childCount(value) === 0) return false;
   if (state.collapsed.has(pointer)) return false;
   if (state.opened.has(pointer)) return true;
+  if (state.expansion === 'shut') return false;
+  if (state.expansion === 'open') return true;
   if (depth === 0) return childCount(value) <= 80;
   if (depth === 1) return childCount(value) <= 24;
   return false;
@@ -286,6 +292,7 @@ function renderShell() {
   els.modeView.setAttribute('aria-selected', String(state.mode === 'view'));
   els.modeCompare.setAttribute('aria-selected', String(state.mode === 'compare'));
   for (const button of els.tabs) button.setAttribute('aria-selected', String(button.dataset.view === state.view));
+  els.treeTools.hidden = state.view !== 'tree' || state.display === undefined;
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
@@ -360,7 +367,9 @@ function renderEmpty() {
   return wrap;
 }
 
-function drawTree(value, segments, depth, parent, hitSet, current) {
+function drawTree(value, segments, depth, parent, hitSet, current, budget) {
+  if (budget.left <= 0) return;
+  budget.left -= 1;
   const pointer = formatPointer(segments);
   const open = isOpen(pointer, depth, value);
   const row = document.createElement('div');
@@ -410,12 +419,15 @@ function drawTree(value, segments, depth, parent, hitSet, current) {
   const entries = Array.isArray(value)
     ? value.map((item, index) => ({seg: {type: 'index', index}, item}))
     : Object.keys(value).map((keyName) => ({seg: {type: 'key', key: keyName}, item: readOwn(value, keyName)}));
-  for (const entry of entries.slice(0, 200)) drawTree(entry.item, segments.concat(entry.seg), depth + 1, parent, hitSet, current);
-  if (entries.length > 200) {
+  const room = Math.min(200, budget.left);
+  for (const entry of entries.slice(0, room)) drawTree(entry.item, segments.concat(entry.seg), depth + 1, parent, hitSet, current, budget);
+  if (entries.length > room) {
     const more = document.createElement('p');
     more.className = 'more';
     more.style.setProperty('--depth', String(depth + 1));
-    more.textContent = `还有 ${entries.length - 200} 项没画出来。换到表里看，或把过滤写窄一点。`;
+    more.textContent = entries.length > 200
+      ? `还有 ${entries.length - 200} 项没画出来。换到表格里看，或把过滤写窄一点。`
+      : '展开到这里先停一下。其余可以逐层打开，或改用表格。';
     parent.append(more);
   }
 }
@@ -425,7 +437,7 @@ function renderTree() {
   tree.className = 'tree';
   const current = state.hit >= 0 && state.hits[state.hit] ? formatPointer(state.hits[state.hit]) : '';
   const hitSet = new Set(state.hits.map((segments) => formatPointer(segments)));
-  drawTree(state.display, [], 0, tree, hitSet, state.find.trim() ? current : '');
+  drawTree(state.display, [], 0, tree, hitSet, state.find.trim() ? current : '', {left: 800});
   return tree;
 }
 
@@ -586,7 +598,30 @@ function renderDiff(diff) {
   if (!state.docs.a.parsed?.ok || !state.docs.b.parsed?.ok) return wrap.append(emptyNote('两边都要是合法的 JSON 或 NDJSON。')), wrap;
   if (!diff.changes.length) return wrap.append(emptyNote('两份原文一样。')), wrap;
   if (diff.truncated) wrap.append(emptyNote('先列出 400 处，后面没有继续比。'));
-  for (const change of diff.changes) {
+  const counts = {added: 0, removed: 0, changed: 0};
+  for (const change of diff.changes) counts[change.kind] += 1;
+  const filters = document.createElement('div');
+  filters.className = 'diff-filters';
+  for (const kind of ['all', 'changed', 'added', 'removed']) {
+    const choice = document.createElement('button');
+    choice.type = 'button';
+    choice.className = 'pill';
+    const count = kind === 'all' ? diff.changes.length : counts[kind];
+    choice.textContent = `${kind === 'all' ? '全部' : KIND_LABEL[kind]} ${count}`;
+    if (state.diffKind === kind) choice.setAttribute('aria-pressed', 'true');
+    choice.addEventListener('click', () => {
+      state.diffKind = kind;
+      renderStage();
+    });
+    filters.append(choice);
+  }
+  wrap.append(filters);
+  const visible = diff.changes.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
+  if (!visible.length) {
+    wrap.append(emptyNote('这一类里没有差异。'));
+    return wrap;
+  }
+  for (const change of visible) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `diff-row kind-${change.kind}`;
@@ -718,6 +753,9 @@ function applyFilter({rememberResult = false} = {}) {
     state.sort = null;
     state.hit = -1;
     state.pendingScroll = false;
+    state.expansion = null;
+    state.collapsed = new Set();
+    state.opened = new Set();
   }
   compute();
   if (rememberResult && state.outcome?.ok) remember(state.filter);
@@ -924,6 +962,17 @@ els.find.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   event.preventDefault();
   focusHit(event.shiftKey ? -1 : 1);
+});
+document.querySelector('#expand-all').addEventListener('click', () => {
+  state.expansion = 'open';
+  state.collapsed = new Set();
+  refresh();
+});
+document.querySelector('#collapse-all').addEventListener('click', () => {
+  state.expansion = 'shut';
+  state.opened = new Set();
+  state.collapsed = new Set();
+  refresh();
 });
 document.querySelector('#find-prev').addEventListener('click', () => focusHit(-1));
 document.querySelector('#find-next').addEventListener('click', () => focusHit(1));

@@ -94,8 +94,19 @@
           <button class="pill" type="button" data-view="raw" role="tab" aria-selected="false">文本</button>
           <button class="pill" type="button" data-view="diff" role="tab" aria-selected="false">差异</button>
         </div>
+        <div class="tree-tools" id="tree-tools" hidden>
+          <button class="pill" type="button" id="expand-all">全部展开</button>
+          <button class="pill" type="button" id="collapse-all">全部收起</button>
+        </div>
         <p id="context" class="context"></p>
         <p id="summary" aria-live="polite">等一份 JSON</p>
+      </div>
+      <div class="findbar">
+        <label for="find">在结果里找</label>
+        <input id="find" type="text" spellcheck="false" autocomplete="off" placeholder="键或值，回车到下一处">
+        <button class="pill" type="button" id="find-prev">上一处</button>
+        <button class="pill" type="button" id="find-next">下一处</button>
+        <span id="find-count"></span>
       </div>
       <div class="pathbar">
         <div class="paths">
@@ -108,13 +119,6 @@
           <button class="pill" type="button" id="copy-pointer">复制指针</button>
           <button class="pill" type="button" id="copy-value">复制值</button>
         </div>
-      </div>
-      <div class="findbar">
-        <label for="find">查找</label>
-        <input id="find" type="text" spellcheck="false" autocomplete="off" placeholder="在结果里找键或值">
-        <button class="pill" type="button" id="find-prev">上一个</button>
-        <button class="pill" type="button" id="find-next">下一个</button>
-        <span id="find-count"></span>
       </div>
       <div id="stage"></div>
     </section>
