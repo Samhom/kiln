@@ -25,7 +25,7 @@ const state = {
   outcome: null,
   display: undefined
 };
-const timers = {a: 0, b: 0};
+const timers = {a: 0, b: 0, filter: 0};
 let copyTimer = 0;
 
 const els = {
@@ -277,12 +277,12 @@ function renderSourceMeta() {
   const failed = Boolean(state.docs.a.text.trim() && state.docs.a.parsed && !state.docs.a.parsed.ok);
   const badFilter = Boolean(state.outcome && !state.outcome.ok);
   els.filterMsg.classList.toggle('is-error', failed || badFilter);
-  if (!state.docs.a.text.trim()) els.filterMsg.textContent = 'Ctrl+Enter 应用过滤';
-  else if (failed) els.filterMsg.textContent = '原文还不能解析，过滤先停着';
+  if (!state.docs.a.text.trim()) els.filterMsg.textContent = '输入后会自动更新右边';
+  else if (failed) els.filterMsg.textContent = '左边还不能解析，过滤先停着';
   else if (badFilter) els.filterMsg.textContent = state.outcome.error;
-  else if (state.filter.trim() && state.filter.trim() !== '.' && state.outcome?.values.length === 0) els.filterMsg.textContent = '没有匹配';
-  else if (state.outcome?.values.length > 1) els.filterMsg.textContent = `${state.outcome.values.length} 条结果，已收成数组`;
-  else els.filterMsg.textContent = state.filter.trim() ? '1 条结果' : 'Ctrl+Enter 应用过滤';
+  else if (state.filter.trim() && state.filter.trim() !== '.' && state.outcome?.values.length === 0) els.filterMsg.textContent = '没有匹配。可以改条件，或清除后看回全部';
+  else if (state.outcome?.values.length > 1) els.filterMsg.textContent = `${state.outcome.values.length} 条结果，已收成数组，适合切到表格`;
+  else els.filterMsg.textContent = state.filter.trim() ? '1 条结果' : '输入后会自动更新右边';
 }
 
 function renderChips() {
@@ -295,7 +295,8 @@ function renderChips() {
     button.textContent = text;
     button.addEventListener('click', () => {
       els.filter.value = text;
-      commitFilter();
+      window.clearTimeout(timers.filter);
+      applyFilter({rememberResult: true});
     });
     els.chips.append(button);
   }
@@ -642,7 +643,7 @@ function renderStage() {
   else if (state.view === 'diff') view = renderDiff(diff);
   else if (!state.docs.a.parsed?.ok) view = emptyNote(state.docs.a.parsed?.error || '原文还不能解析');
   else if (!state.outcome?.ok) view = emptyNote(state.outcome?.error || '过滤没有算成');
-  else if (state.outcome.values.length === 0) view = emptyNote('没有匹配');
+  else if (state.outcome.values.length === 0) view = renderNoMatch();
   else if (state.view === 'table') view = renderTable();
   else if (state.view === 'raw') view = renderRaw();
   else view = renderTree();
@@ -659,11 +660,37 @@ function refresh() {
   renderStage();
 }
 
-function commitFilter() {
-  state.filter = els.filter.value;
-  invalidate();
+function renderNoMatch() {
+  const wrap = document.createElement('div');
+  wrap.className = 'empty-state';
+  const title = document.createElement('h2');
+  title.textContent = '没有留下结果';
+  const copy = document.createElement('p');
+  copy.textContent = '这条过滤没有对上任何值。';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'pill';
+  button.textContent = '清除过滤，看回全部';
+  button.addEventListener('click', () => {
+    els.filter.value = '';
+    window.clearTimeout(timers.filter);
+    applyFilter();
+  });
+  wrap.append(title, copy, button);
+  return wrap;
+}
+
+function applyFilter({rememberResult = false} = {}) {
+  const next = els.filter.value;
+  if (next !== state.filter) {
+    state.filter = next;
+    state.selection = [];
+    state.sort = null;
+    state.hit = -1;
+    state.pendingScroll = false;
+  }
   compute();
-  if (state.outcome?.ok) remember(state.filter);
+  if (rememberResult && state.outcome?.ok) remember(state.filter);
   renderChips();
   refresh();
 }
@@ -808,7 +835,19 @@ for (const button of els.tabs) {
 }
 els.filterForm.addEventListener('submit', (event) => {
   event.preventDefault();
-  commitFilter();
+  window.clearTimeout(timers.filter);
+  applyFilter({rememberResult: true});
+});
+els.filter.addEventListener('input', () => {
+  window.clearTimeout(timers.filter);
+  els.filterMsg.textContent = '正在更新结果';
+  els.filterMsg.classList.remove('is-error');
+  timers.filter = window.setTimeout(() => applyFilter(), 280);
+});
+document.querySelector('#clear-filter').addEventListener('click', () => {
+  els.filter.value = '';
+  window.clearTimeout(timers.filter);
+  applyFilter();
 });
 document.querySelector('#tidy-a').addEventListener('click', () => tidy('a'));
 document.querySelector('#tidy-b').addEventListener('click', () => tidy('b'));
@@ -862,7 +901,8 @@ document.addEventListener('keydown', (event) => {
   const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
-    commitFilter();
+    window.clearTimeout(timers.filter);
+    applyFilter({rememberResult: true});
   } else if (event.key === '/' && !typing) {
     event.preventDefault();
     els.find.focus();

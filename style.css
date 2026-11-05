@@ -124,7 +124,7 @@ textarea, input[type="text"] {
 }
 textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
 .filter, .findbar { margin-top: 8px; }
-.filter { display: flex; gap: 8px; }
+.filter { display: flex; flex-wrap: wrap; gap: 8px; }
 .filter input, .findbar input { flex: 1; min-width: 0; padding: 8px 10px; }
 .filter label, .findbar label { color: var(--muted); font-size: 13px; }
 .filter-msg { margin: 6px 0; }
