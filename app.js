@@ -48,7 +48,7 @@ const els = {
   chips: document.querySelector('#chips'),
   summary: document.querySelector('#summary'),
   context: document.querySelector('#context'),
-  pathJq: document.querySelector('#path-jq'),
+  crumbs: document.querySelector('#crumbs'),
   pathPointer: document.querySelector('#path-pointer'),
   copyState: document.querySelector('#copy-state'),
   find: document.querySelector('#find'),
@@ -244,10 +244,40 @@ function choose(segments, value) {
   renderStage();
 }
 
+function valueFor(segments) {
+  const roots = [];
+  if (state.display !== undefined) roots.push(state.display);
+  if (state.docs.a.parsed?.ok) roots.push(state.docs.a.parsed.value);
+  if (state.docs.b.parsed?.ok) roots.push(state.docs.b.parsed.value);
+  for (const root of roots) {
+    if (!segments.length) return root;
+    const value = valueAt(root, segments);
+    if (value !== undefined) return value;
+  }
+  return undefined;
+}
+
 function renderPath() {
-  els.pathJq.textContent = formatJq(state.selection);
+  els.crumbs.replaceChildren();
+  const levels = [[]];
+  for (let index = 0; index < state.selection.length; index += 1) levels.push(state.selection.slice(0, index + 1));
+  levels.forEach((level, index) => {
+    if (index > 0) {
+      const separator = document.createElement('span');
+      separator.className = 'crumb-sep';
+      separator.textContent = '/';
+      els.crumbs.append(separator);
+    }
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'crumb';
+    button.textContent = level.length ? segmentLabel(level.at(-1)) : '整份';
+    if (index === levels.length - 1) button.setAttribute('aria-current', 'location');
+    button.addEventListener('click', () => choose(level, valueFor(level)));
+    els.crumbs.append(button);
+  });
   const pointer = formatPointer(state.selection);
-  els.pathPointer.textContent = pointer || '空（整份）';
+  els.pathPointer.textContent = pointer ? `指针 ${pointer}` : '点一层可以回到那里';
 }
 
 function renderShell() {

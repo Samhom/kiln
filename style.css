@@ -152,7 +152,11 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
 .context { color: var(--gold); font-size: 12px; }
 #summary { text-align: right; }
 .pathbar, .findbar { margin-top: 10px; }
-.paths { display: flex; flex-direction: column; min-width: 0; }
+.paths { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+#crumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.crumb { font-family: var(--mono); font-size: 13px; padding: 2px 6px; border-radius: 8px; background: var(--bg-3); }
+.crumb[aria-current="location"] { background: var(--ember); color: var(--ember-ink); }
+.crumb-sep { color: var(--faint); }
 .paths code, .diff-row code {
   font-family: var(--mono);
   font-size: 13px;
