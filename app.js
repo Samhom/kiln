@@ -1,0 +1,876 @@
+import {diffValues, formatJq, formatPointer, parseDocument, runFilter, summarize, typeName, valueAt} from './engine.mjs';
+import {samples} from './samples.mjs';
+
+const HINTS = ['.items[] | select(.price >= 80)', '.[] | select(.status >= 500)', '.buyer.city', 'keys'];
+const TYPE_LABEL = {object: '对象', array: '数组', string: '字符串', number: '数字', boolean: '布尔', null: 'null'};
+const KIND_LABEL = {added: '增', removed: '删', changed: '改'};
+
+const state = {
+  mode: 'view',
+  view: 'tree',
+  filter: '',
+  find: '',
+  hit: 0,
+  hits: [],
+  pendingScroll: false,
+  selection: [],
+  pick: {segments: [], value: undefined},
+  sort: null,
+  collapsed: new Set(),
+  opened: new Set(),
+  docs: {
+    a: {text: '', parsed: null, note: ''},
+    b: {text: '', parsed: null, note: ''}
+  },
+  outcome: null,
+  display: undefined
+};
+const timers = {a: 0, b: 0};
+let copyTimer = 0;
+
+const els = {
+  main: document.querySelector('#main'),
+  sourceA: document.querySelector('#source-a'),
+  sourceB: document.querySelector('#source-b'),
+  modeView: document.querySelector('#mode-view'),
+  modeCompare: document.querySelector('#mode-compare'),
+  textA: document.querySelector('#text-a'),
+  textB: document.querySelector('#text-b'),
+  badgeA: document.querySelector('#badge-a'),
+  badgeB: document.querySelector('#badge-b'),
+  linesA: document.querySelector('#lines-a'),
+  linesB: document.querySelector('#lines-b'),
+  msgA: document.querySelector('#msg-a'),
+  msgB: document.querySelector('#msg-b'),
+  filter: document.querySelector('#filter'),
+  filterForm: document.querySelector('#filter-form'),
+  filterMsg: document.querySelector('#filter-msg'),
+  chips: document.querySelector('#chips'),
+  summary: document.querySelector('#summary'),
+  pathJq: document.querySelector('#path-jq'),
+  pathPointer: document.querySelector('#path-pointer'),
+  copyState: document.querySelector('#copy-state'),
+  find: document.querySelector('#find'),
+  findCount: document.querySelector('#find-count'),
+  stage: document.querySelector('#stage'),
+  tabs: [...document.querySelectorAll('[data-view]')]
+};
+
+function isPlain(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function readOwn(value, key) {
+  if (!value || typeof value !== 'object') return undefined;
+  const desc = Object.getOwnPropertyDescriptor(value, key);
+  if (!desc || !Object.prototype.hasOwnProperty.call(desc, 'value')) return undefined;
+  return desc.value;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1048576).toFixed(1)} MB`;
+}
+
+function cellText(value) {
+  if (typeof value === 'string') return value.length > 160 ? `${value.slice(0, 160)}…` : value;
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `数组 · ${value.length}`;
+  return `对象 · ${Object.keys(value).length} 个键`;
+}
+
+function previewPrimitive(value) {
+  if (typeof value === 'string') return JSON.stringify(value.length > 120 ? `${value.slice(0, 120)}…` : value);
+  return JSON.stringify(value);
+}
+
+function previewBranch(value) {
+  if (Array.isArray(value)) return `数组 · ${value.length}`;
+  return `对象 · ${Object.keys(value).length} 个键`;
+}
+
+function childCount(value) {
+  if (Array.isArray(value)) return value.length;
+  if (isPlain(value)) return Object.keys(value).length;
+  return 0;
+}
+
+function isBranch(value) {
+  return Array.isArray(value) || isPlain(value);
+}
+
+function segmentLabel(seg) {
+  return seg.type === 'index' ? `[${seg.index}]` : seg.key;
+}
+
+function compactJson(value) {
+  const text = JSON.stringify(value);
+  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
+}
+
+function readRecent() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem('kiln.filters') || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item) => typeof item === 'string' && item.length <= 2000).slice(0, 6);
+  } catch {
+    return [];
+  }
+}
+
+function remember(filter) {
+  const text = filter.trim();
+  if (!text || text === '.' || text.length > 2000) return;
+  try {
+    const next = [text, ...readRecent().filter((item) => item !== text)].slice(0, 6);
+    sessionStorage.setItem('kiln.filters', JSON.stringify(next));
+  } catch {
+    // 记不住最近的过滤也不影响使用。
+  }
+}
+
+function flash(message) {
+  els.copyState.textContent = message;
+  window.clearTimeout(copyTimer);
+  copyTimer = window.setTimeout(() => {
+    els.copyState.textContent = '';
+  }, 1600);
+}
+
+async function copyText(text, message) {
+  try {
+    await navigator.clipboard.writeText(text);
+    flash(message || '已复制');
+  } catch {
+    flash('浏览器没有允许复制，可以选中上面的路径');
+  }
+}
+
+function invalidate() {
+  state.selection = [];
+  state.collapsed = new Set();
+  state.opened = new Set();
+  state.sort = null;
+  state.hit = 0;
+  state.pendingScroll = false;
+}
+
+function compute() {
+  if (!state.docs.a.parsed?.ok) {
+    state.outcome = null;
+    state.display = undefined;
+    state.pick = {segments: [], value: undefined};
+    return;
+  }
+  const outcome = runFilter(state.docs.a.parsed.value, state.filter);
+  state.outcome = outcome;
+  if (!outcome.ok || outcome.values.length === 0) {
+    state.display = undefined;
+    state.pick = {segments: [], value: undefined};
+    return;
+  }
+  state.display = outcome.values.length === 1 ? outcome.values[0] : outcome.values;
+  state.pick = {segments: [], value: state.display};
+}
+
+function parseSide(side) {
+  const doc = state.docs[side];
+  doc.parsed = parseDocument(doc.text);
+  if (side === 'a') {
+    invalidate();
+    compute();
+  }
+  refresh();
+}
+
+function setText(side, text, note = '') {
+  const doc = state.docs[side];
+  doc.text = text;
+  doc.note = note;
+  (side === 'a' ? els.textA : els.textB).value = text;
+  window.clearTimeout(timers[side]);
+  parseSide(side);
+}
+
+function isOpen(pointer, depth, value) {
+  if (!isBranch(value) || childCount(value) === 0) return false;
+  if (state.collapsed.has(pointer)) return false;
+  if (state.opened.has(pointer)) return true;
+  if (depth === 0) return childCount(value) <= 80;
+  if (depth === 1) return childCount(value) <= 24;
+  return false;
+}
+
+function collectHits(value, query) {
+  const hits = [];
+  if (!query) return hits;
+  const needle = query.toLowerCase();
+  let seen = 0;
+  const walk = (current, segments) => {
+    if (hits.length >= 200 || seen > 50000) return;
+    seen += 1;
+    const last = segments.at(-1);
+    const label = last ? (last.type === 'key' ? last.key : String(last.index)) : '';
+    const primitive = current === null || typeof current !== 'object';
+    if ((label && label.toLowerCase().includes(needle)) || (primitive && String(current).toLowerCase().includes(needle))) {
+      hits.push(segments.map((seg) => ({...seg})));
+    }
+    if (Array.isArray(current)) current.forEach((item, index) => walk(item, segments.concat({type: 'index', index})));
+    else if (isPlain(current)) {
+      for (const key of Object.keys(current)) walk(readOwn(current, key), segments.concat({type: 'key', key}));
+    }
+  };
+  walk(value, []);
+  return hits;
+}
+
+function compareCells(left, right, dir) {
+  const empty = (value) => value === undefined || value === null;
+  if (empty(left) && empty(right)) return 0;
+  if (empty(left)) return 1;
+  if (empty(right)) return -1;
+  const a = typeof left === 'object' ? cellText(left) : left;
+  const b = typeof right === 'object' ? cellText(right) : right;
+  if (typeof a === 'number' && typeof b === 'number') return (a - b) * dir;
+  return String(a).localeCompare(String(b), 'zh') * dir;
+}
+
+function choose(segments, value) {
+  state.selection = segments.map((seg) => ({...seg}));
+  state.pick = {segments: state.selection, value};
+  renderPath();
+  renderStage();
+}
+
+function renderPath() {
+  els.pathJq.textContent = formatJq(state.selection);
+  const pointer = formatPointer(state.selection);
+  els.pathPointer.textContent = pointer || '空（整份）';
+}
+
+function renderShell() {
+  els.main.classList.toggle('is-compare', state.mode === 'compare');
+  els.sourceB.hidden = state.mode !== 'compare';
+  els.modeView.setAttribute('aria-selected', String(state.mode === 'view'));
+  els.modeCompare.setAttribute('aria-selected', String(state.mode === 'compare'));
+  for (const button of els.tabs) button.setAttribute('aria-selected', String(button.dataset.view === state.view));
+}
+
+function renderSourceMeta() {
+  for (const side of ['a', 'b']) {
+    const doc = state.docs[side];
+    const badge = side === 'a' ? els.badgeA : els.badgeB;
+    const lines = side === 'a' ? els.linesA : els.linesB;
+    const msg = side === 'a' ? els.msgA : els.msgB;
+    badge.textContent = doc.parsed?.ok ? (doc.parsed.format === 'ndjson' ? 'NDJSON' : 'JSON') : '';
+    lines.textContent = doc.text ? `${doc.text.split(/\n/).length} 行` : '';
+    msg.classList.toggle('is-error', Boolean(doc.text.trim() && doc.parsed && !doc.parsed.ok));
+    if (!doc.text.trim()) msg.textContent = '';
+    else if (!doc.parsed?.ok) msg.textContent = doc.parsed?.error || '';
+    else msg.textContent = doc.note || '';
+  }
+  const failed = Boolean(state.docs.a.text.trim() && state.docs.a.parsed && !state.docs.a.parsed.ok);
+  const badFilter = Boolean(state.outcome && !state.outcome.ok);
+  els.filterMsg.classList.toggle('is-error', failed || badFilter);
+  if (!state.docs.a.text.trim()) els.filterMsg.textContent = 'Ctrl+Enter 应用过滤';
+  else if (failed) els.filterMsg.textContent = '原文还不能解析，过滤先停着';
+  else if (badFilter) els.filterMsg.textContent = state.outcome.error;
+  else if (state.filter.trim() && state.filter.trim() !== '.' && state.outcome?.values.length === 0) els.filterMsg.textContent = '没有匹配';
+  else if (state.outcome?.values.length > 1) els.filterMsg.textContent = `${state.outcome.values.length} 条结果，已收成数组`;
+  else els.filterMsg.textContent = state.filter.trim() ? '1 条结果' : 'Ctrl+Enter 应用过滤';
+}
+
+function renderChips() {
+  els.chips.replaceChildren();
+  const recent = readRecent().filter((item) => !HINTS.includes(item));
+  for (const text of [...HINTS, ...recent]) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'chip';
+    button.textContent = text;
+    button.addEventListener('click', () => {
+      els.filter.value = text;
+      commitFilter();
+    });
+    els.chips.append(button);
+  }
+}
+
+function emptyNote(text) {
+  const p = document.createElement('p');
+  p.className = 'empty';
+  p.textContent = text;
+  return p;
+}
+
+function renderEmpty() {
+  const wrap = document.createElement('div');
+  wrap.className = 'empty-state';
+  const title = document.createElement('h2');
+  title.textContent = '先放进一份 JSON';
+  const copy = document.createElement('p');
+  copy.textContent = '可以粘贴接口响应、拖进文件，或打开上面的示例。树、表、路径和对比都在这个页面里完成。';
+  const row = document.createElement('div');
+  row.className = 'samples';
+  for (const key of ['order', 'log', 'config']) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pill';
+    button.textContent = samples[key].label;
+    button.addEventListener('click', () => loadSample(key));
+    row.append(button);
+  }
+  wrap.append(title, copy, row);
+  return wrap;
+}
+
+function drawTree(value, segments, depth, parent, hitSet, current) {
+  const pointer = formatPointer(segments);
+  const open = isOpen(pointer, depth, value);
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.setProperty('--depth', String(depth));
+  if (hitSet.has(pointer)) row.classList.add('is-hit');
+  if (current && pointer === current) row.dataset.current = 'true';
+  if (formatPointer(state.selection) === pointer) row.classList.add('is-selected');
+  const branch = isBranch(value) && childCount(value) > 0;
+  const twist = document.createElement(branch ? 'button' : 'span');
+  twist.className = 'twist';
+  twist.textContent = branch ? (open ? '▾' : '▸') : '·';
+  if (branch) {
+    twist.type = 'button';
+    twist.setAttribute('aria-label', open ? '收起' : '展开');
+    twist.addEventListener('click', () => {
+      if (open) {
+        state.collapsed.add(pointer);
+        state.opened.delete(pointer);
+      } else {
+        state.collapsed.delete(pointer);
+        state.opened.add(pointer);
+      }
+      renderStage();
+    });
+  }
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'node';
+  const key = document.createElement('span');
+  key.className = 'k';
+  key.textContent = segments.length ? segmentLabel(segments.at(-1)) : '根';
+  const shown = document.createElement('span');
+  if (!isBranch(value)) {
+    shown.className = 'v';
+    shown.dataset.kind = typeName(value);
+    shown.textContent = previewPrimitive(value);
+  } else {
+    shown.className = 'v dim';
+    shown.textContent = previewBranch(value);
+  }
+  main.append(key, shown);
+  main.addEventListener('click', () => choose(segments, value));
+  row.append(twist, main);
+  parent.append(row);
+  if (!open) return;
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => ({seg: {type: 'index', index}, item}))
+    : Object.keys(value).map((keyName) => ({seg: {type: 'key', key: keyName}, item: readOwn(value, keyName)}));
+  for (const entry of entries.slice(0, 200)) drawTree(entry.item, segments.concat(entry.seg), depth + 1, parent, hitSet, current);
+  if (entries.length > 200) {
+    const more = document.createElement('p');
+    more.className = 'more';
+    more.style.setProperty('--depth', String(depth + 1));
+    more.textContent = `还有 ${entries.length - 200} 项没画出来。换到表里看，或把过滤写窄一点。`;
+    parent.append(more);
+  }
+}
+
+function renderTree() {
+  const tree = document.createElement('div');
+  tree.className = 'tree';
+  const current = state.hit >= 0 && state.hits[state.hit] ? formatPointer(state.hits[state.hit]) : '';
+  const hitSet = new Set(state.hits.map((segments) => formatPointer(segments)));
+  drawTree(state.display, [], 0, tree, hitSet, state.find.trim() ? current : '');
+  return tree;
+}
+
+function headerCell(label, sort) {
+  const th = document.createElement('th');
+  const button = document.createElement('button');
+  button.type = 'button';
+  const active = state.sort && state.sort.index === sort.index && state.sort.key === sort.key;
+  button.textContent = label + (active ? (state.sort.dir < 0 ? ' ↓' : ' ↑') : '');
+  button.addEventListener('click', () => {
+    state.sort = active ? {...sort, dir: -state.sort.dir} : {...sort, dir: 1};
+    renderStage();
+  });
+  th.append(button);
+  return th;
+}
+
+function valueCell(text, segments, value) {
+  const td = document.createElement('td');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = text;
+  if (formatPointer(state.selection) === formatPointer(segments)) td.classList.add('is-selected');
+  button.addEventListener('click', () => choose(segments, value));
+  td.append(button);
+  return td;
+}
+
+function tableFrame(noteText, table) {
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  if (noteText) {
+    const note = document.createElement('p');
+    note.className = 'table-note';
+    note.textContent = noteText;
+    wrap.append(note);
+  }
+  wrap.append(table);
+  return wrap;
+}
+
+function renderObjectTable(rows) {
+  const columns = [];
+  const seen = new Set();
+  for (const row of rows.slice(0, 500)) {
+    for (const key of Object.keys(row)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      columns.push(key);
+      if (columns.length === 24) break;
+    }
+    if (columns.length === 24) break;
+  }
+  const limited = columns.length === 24 && rows.slice(0, 500).some((row) => Object.keys(row).some((key) => !seen.has(key)));
+  let indexed = rows.map((item, index) => ({index, item}));
+  const huge = indexed.length > 5000;
+  if (huge) indexed = indexed.slice(0, 300);
+  if (state.sort) {
+    const dir = state.sort.dir;
+    indexed.sort((a, b) => state.sort.index ? (a.index - b.index) * dir : compareCells(readOwn(a.item, state.sort.key), readOwn(b.item, state.sort.key), dir));
+  }
+  const clipped = !huge && indexed.length > 300;
+  const visible = indexed.slice(0, 300);
+  const notes = [];
+  if (huge) notes.push('行数很多，表只取前 300 行');
+  else if (clipped) notes.push(`先显示 300 行，共 ${rows.length} 行`);
+  if (limited) notes.push('列停在 24 个');
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  head.append(headerCell('序号', {index: true, key: '#'}));
+  for (const key of columns) head.append(headerCell(key, {index: false, key}));
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const tbody = document.createElement('tbody');
+  for (const row of visible) {
+    const tr = document.createElement('tr');
+    tr.append(valueCell(String(row.index), [{type: 'index', index: row.index}], row.item));
+    for (const key of columns) {
+      const has = Object.prototype.hasOwnProperty.call(row.item, key);
+      const value = has ? readOwn(row.item, key) : undefined;
+      tr.append(valueCell(has ? cellText(value) : '', [{type: 'index', index: row.index}, {type: 'key', key}], value));
+    }
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return tableFrame(notes.join('，'), table);
+}
+
+function renderKeyTable(value) {
+  let rows = Object.keys(value).map((key) => ({key, value: readOwn(value, key)}));
+  const total = rows.length;
+  if (state.sort?.key === '键') rows.sort((a, b) => a.key.localeCompare(b.key, 'zh') * state.sort.dir);
+  if (state.sort?.key === '值') rows.sort((a, b) => compareCells(a.value, b.value, state.sort.dir));
+  const clipped = total > 300;
+  rows = rows.slice(0, 300);
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  head.append(headerCell('键', {index: false, key: '键'}), headerCell('值', {index: false, key: '值'}));
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const tbody = document.createElement('tbody');
+  for (const row of rows) {
+    const tr = document.createElement('tr');
+    tr.append(
+      valueCell(row.key, [{type: 'key', key: row.key}], row.value),
+      valueCell(cellText(row.value), [{type: 'key', key: row.key}], row.value)
+    );
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return tableFrame(clipped ? `先显示 300 行，共 ${total} 个键` : '', table);
+}
+
+function renderListTable(rows) {
+  let indexed = rows.map((item, index) => ({index, item}));
+  if (state.sort?.key === '值') indexed.sort((a, b) => compareCells(a.item, b.item, state.sort.dir));
+  if (state.sort?.index) indexed.sort((a, b) => (a.index - b.index) * state.sort.dir);
+  const clipped = indexed.length > 300;
+  const table = document.createElement('table');
+  const head = document.createElement('tr');
+  head.append(headerCell('序号', {index: true, key: '#'}), headerCell('值', {index: false, key: '值'}));
+  const thead = document.createElement('thead');
+  thead.append(head);
+  const tbody = document.createElement('tbody');
+  for (const row of indexed.slice(0, 300)) {
+    const tr = document.createElement('tr');
+    const segments = [{type: 'index', index: row.index}];
+    tr.append(valueCell(String(row.index), segments, row.item), valueCell(cellText(row.item), segments, row.item));
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  return tableFrame(clipped ? `先显示 300 行，共 ${rows.length} 行` : '', table);
+}
+
+function renderTable() {
+  const value = state.display;
+  if (Array.isArray(value) && value.length && value.every(isPlain)) return renderObjectTable(value);
+  if (Array.isArray(value)) return renderListTable(value);
+  if (isPlain(value)) return renderKeyTable(value);
+  return renderListTable([value]);
+}
+
+function renderRaw() {
+  const wrap = document.createElement('div');
+  wrap.className = 'raw-wrap';
+  const pre = document.createElement('pre');
+  const full = JSON.stringify(state.display, null, 2);
+  pre.textContent = full.length > 200000 ? `${full.slice(0, 200000)}\n… 后面省略了，复制值仍是完整结果` : full;
+  wrap.append(pre);
+  return wrap;
+}
+
+function renderDiff(diff) {
+  const wrap = document.createElement('div');
+  wrap.className = 'diff';
+  if (state.mode !== 'compare') return wrap.append(emptyNote('先切到对比，再贴上两份原文。')), wrap;
+  if (!state.docs.a.text.trim() || !state.docs.b.text.trim()) return wrap.append(emptyNote('两边都要有原文。')), wrap;
+  if (!state.docs.a.parsed?.ok || !state.docs.b.parsed?.ok) return wrap.append(emptyNote('两边都要是合法的 JSON 或 NDJSON。')), wrap;
+  if (!diff.changes.length) return wrap.append(emptyNote('两份原文一样。')), wrap;
+  if (diff.truncated) wrap.append(emptyNote('先列出 400 处，后面没有继续比。'));
+  for (const change of diff.changes) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `diff-row kind-${change.kind}`;
+    const mark = document.createElement('span');
+    mark.className = 'mark';
+    mark.textContent = KIND_LABEL[change.kind];
+    const path = document.createElement('code');
+    path.textContent = formatJq(change.segments);
+    button.append(mark, path);
+    if (change.kind !== 'added') {
+      const before = document.createElement('span');
+      before.className = 'diff-value';
+      before.textContent = compactJson(change.before);
+      button.append(before);
+    } else button.append(document.createElement('span'));
+    const arrow = document.createElement('span');
+    arrow.className = 'arrow';
+    arrow.textContent = change.kind === 'changed' ? '→' : '';
+    button.append(arrow);
+    if (change.kind !== 'removed') {
+      const after = document.createElement('span');
+      after.className = 'diff-value';
+      after.textContent = compactJson(change.after);
+      button.append(after);
+    }
+    button.addEventListener('click', () => choose(change.segments, change.kind === 'removed' ? change.before : change.after));
+    wrap.append(button);
+  }
+  return wrap;
+}
+
+function renderSummary(diff) {
+  if (state.view === 'diff') {
+    if (!diff) els.summary.textContent = '差异';
+    else if (!diff.changes.length) els.summary.textContent = '两份原文一样';
+    else els.summary.textContent = `${diff.changes.length} 处差异${diff.truncated ? '，后面没有继续比' : ''}`;
+    return;
+  }
+  if (state.display === undefined) {
+    els.summary.textContent = state.docs.a.text.trim() ? '没有可显示的结果' : '等一份 JSON';
+    return;
+  }
+  const info = summarize(state.display);
+  const bits = [TYPE_LABEL[info.type] || info.type];
+  if (state.outcome?.values.length > 1) bits.push(`${state.outcome.values.length} 条`);
+  bits.push(`${info.nodes}${info.capped ? '+' : ''} 个节点`);
+  bits.push(`深度 ${info.depth}`);
+  if (state.docs.a.parsed?.bytes) bits.push(`${formatBytes(state.docs.a.parsed.bytes)} 原文`);
+  els.summary.textContent = bits.join(' · ');
+}
+
+function syncHits() {
+  state.hits = state.display === undefined ? [] : collectHits(state.display, state.find.trim());
+  if (state.hit >= state.hits.length) state.hit = 0;
+}
+
+function revealHit() {
+  const segments = state.hits[state.hit];
+  if (!segments) return;
+  for (let i = 0; i < segments.length; i += 1) {
+    const pointer = formatPointer(segments.slice(0, i));
+    state.collapsed.delete(pointer);
+    state.opened.add(pointer);
+  }
+  state.selection = segments.map((seg) => ({...seg}));
+  state.pick = {segments: state.selection, value: valueAt(state.display, state.selection)};
+  if (state.view === 'raw' || state.view === 'diff') state.view = 'tree';
+  state.pendingScroll = true;
+}
+
+function renderStage() {
+  syncHits();
+  const query = state.find.trim();
+  const capped = state.hits.length === 200 ? '，已到上限' : '';
+  els.findCount.textContent = !query ? '' : state.hits.length ? (state.hit < 0 ? `${state.hits.length} 处${capped}` : `${state.hit + 1} / ${state.hits.length}${capped}`) : '没有找到';
+  renderPath();
+  let diff = null;
+  if (state.view === 'diff' && state.mode === 'compare' && state.docs.a.parsed?.ok && state.docs.b.parsed?.ok) {
+    diff = diffValues(state.docs.a.parsed.value, state.docs.b.parsed.value);
+  }
+  renderSummary(diff);
+  let view;
+  if (!state.docs.a.text.trim() && state.view !== 'diff') view = renderEmpty();
+  else if (state.view === 'diff') view = renderDiff(diff);
+  else if (!state.docs.a.parsed?.ok) view = emptyNote(state.docs.a.parsed?.error || '原文还不能解析');
+  else if (!state.outcome?.ok) view = emptyNote(state.outcome?.error || '过滤没有算成');
+  else if (state.outcome.values.length === 0) view = emptyNote('没有匹配');
+  else if (state.view === 'table') view = renderTable();
+  else if (state.view === 'raw') view = renderRaw();
+  else view = renderTree();
+  els.stage.replaceChildren(view);
+  if (state.pendingScroll) {
+    els.stage.querySelector('[data-current="true"]')?.scrollIntoView({block: 'nearest'});
+    state.pendingScroll = false;
+  }
+}
+
+function refresh() {
+  renderShell();
+  renderSourceMeta();
+  renderStage();
+}
+
+function commitFilter() {
+  state.filter = els.filter.value;
+  invalidate();
+  compute();
+  if (state.outcome?.ok) remember(state.filter);
+  renderChips();
+  refresh();
+}
+
+function loadSample(key) {
+  const sample = samples[key];
+  if (!sample) return;
+  state.mode = sample.mode;
+  state.view = sample.view;
+  state.filter = sample.filter;
+  els.filter.value = sample.filter;
+  state.docs.a.text = sample.a;
+  state.docs.b.text = sample.b || '';
+  state.docs.a.note = '';
+  state.docs.b.note = '';
+  els.textA.value = sample.a;
+  els.textB.value = sample.b || '';
+  state.docs.a.parsed = parseDocument(sample.a);
+  state.docs.b.parsed = parseDocument(sample.b || '');
+  remember(sample.filter);
+  invalidate();
+  compute();
+  renderChips();
+  refresh();
+  els.stage.scrollTop = 0;
+}
+
+function tidy(side) {
+  const doc = state.docs[side];
+  if (!doc.parsed?.ok) {
+    doc.note = '';
+    refresh();
+    return;
+  }
+  const text = doc.parsed.format === 'ndjson'
+    ? `${doc.parsed.value.map((item) => JSON.stringify(item)).join('\n')}\n`
+    : `${JSON.stringify(doc.parsed.value, null, 2)}\n`;
+  setText(side, text, '已整理');
+}
+
+function loadFile(file, side) {
+  if (!file) return;
+  if (side === 'b') state.mode = 'compare';
+  if (/^(image|audio|video)\//.test(file.type) || file.type === 'application/pdf' || file.type === 'application/zip' || file.type === 'application/gzip') {
+    state.docs[side].note = '';
+    (side === 'a' ? els.msgA : els.msgB).textContent = '请打开 JSON、NDJSON 或文本';
+    (side === 'a' ? els.msgA : els.msgB).classList.add('is-error');
+    renderShell();
+    return;
+  }
+  if (file.size > 8000000) {
+    const msg = side === 'a' ? els.msgA : els.msgB;
+    msg.textContent = '超过 8MB，窑不打开这么大的文件';
+    msg.classList.add('is-error');
+    renderShell();
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => setText(side, typeof reader.result === 'string' ? reader.result : '', `已打开 ${file.name.slice(0, 80)}`);
+  reader.onerror = () => {
+    const msg = side === 'a' ? els.msgA : els.msgB;
+    msg.textContent = '这个文件没有读出来';
+    msg.classList.add('is-error');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function bindFile(side) {
+  const input = document.querySelector(side === 'a' ? '#file-a' : '#file-b');
+  const opener = document.querySelector(side === 'a' ? '#open-a' : '#open-b');
+  opener.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    loadFile(input.files?.[0], side);
+    input.value = '';
+  });
+}
+
+function bindDrop(element, side) {
+  element.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    element.classList.add('dropping');
+  });
+  element.addEventListener('dragleave', () => element.classList.remove('dropping'));
+  element.addEventListener('drop', (event) => {
+    event.preventDefault();
+    element.classList.remove('dropping');
+    loadFile(event.dataTransfer?.files?.[0], side);
+  });
+}
+
+function insertSpaces(element) {
+  const start = element.selectionStart ?? element.value.length;
+  const end = element.selectionEnd ?? start;
+  element.setRangeText('  ', start, end, 'end');
+  element.dispatchEvent(new Event('input', {bubbles: true}));
+}
+
+function focusHit(delta) {
+  syncHits();
+  if (!state.hits.length) return;
+  if (state.hit < 0) state.hit = delta < 0 ? state.hits.length - 1 : 0;
+  else state.hit = (state.hit + delta + state.hits.length) % state.hits.length;
+  revealHit();
+  refresh();
+}
+
+function watchText(side) {
+  const element = side === 'a' ? els.textA : els.textB;
+  element.addEventListener('input', () => {
+    state.docs[side].text = element.value;
+    state.docs[side].note = '';
+    window.clearTimeout(timers[side]);
+    timers[side] = window.setTimeout(() => parseSide(side), 250);
+    renderSourceMeta();
+  });
+  element.addEventListener('keydown', (event) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      insertSpaces(element);
+    }
+  });
+}
+
+els.modeView.addEventListener('click', () => {
+  state.mode = 'view';
+  if (state.view === 'diff') state.view = 'tree';
+  refresh();
+});
+els.modeCompare.addEventListener('click', () => {
+  state.mode = 'compare';
+  state.view = 'diff';
+  refresh();
+});
+for (const button of document.querySelectorAll('[data-sample]')) {
+  button.addEventListener('click', () => loadSample(button.dataset.sample));
+}
+for (const button of els.tabs) {
+  button.addEventListener('click', () => {
+    state.view = button.dataset.view;
+    refresh();
+  });
+}
+els.filterForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  commitFilter();
+});
+document.querySelector('#tidy-a').addEventListener('click', () => tidy('a'));
+document.querySelector('#tidy-b').addEventListener('click', () => tidy('b'));
+document.querySelector('#clear-a').addEventListener('click', () => setText('a', ''));
+document.querySelector('#clear-b').addEventListener('click', () => setText('b', ''));
+document.querySelector('#swap').addEventListener('click', () => {
+  const a = state.docs.a.text;
+  const b = state.docs.b.text;
+  state.docs.a.note = '';
+  state.docs.b.note = '';
+  state.docs.a.text = b;
+  state.docs.b.text = a;
+  els.textA.value = b;
+  els.textB.value = a;
+  state.docs.a.parsed = parseDocument(b);
+  state.docs.b.parsed = parseDocument(a);
+  invalidate();
+  compute();
+  refresh();
+});
+document.querySelector('#copy-path').addEventListener('click', () => copyText(formatJq(state.selection), '已复制路径'));
+document.querySelector('#copy-pointer').addEventListener('click', () => {
+  const pointer = formatPointer(state.selection);
+  copyText(pointer, pointer ? '已复制指针' : '已复制根指针（空字符串）');
+});
+document.querySelector('#copy-value').addEventListener('click', () => {
+  if (state.pick.value === undefined && state.display === undefined) {
+    flash('这个路径上没有值');
+    return;
+  }
+  const value = state.pick.segments.length ? state.pick.value : state.display;
+  if (value === undefined) {
+    flash('这个路径上没有值');
+    return;
+  }
+  copyText(JSON.stringify(value, null, 2), '已复制值');
+});
+els.find.addEventListener('input', () => {
+  state.find = els.find.value;
+  state.hit = -1;
+  renderStage();
+});
+els.find.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  focusHit(event.shiftKey ? -1 : 1);
+});
+document.querySelector('#find-prev').addEventListener('click', () => focusHit(-1));
+document.querySelector('#find-next').addEventListener('click', () => focusHit(1));
+document.addEventListener('keydown', (event) => {
+  const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    commitFilter();
+  } else if (event.key === '/' && !typing) {
+    event.preventDefault();
+    els.find.focus();
+  }
+});
+bindFile('a');
+bindFile('b');
+bindDrop(els.sourceA, 'a');
+bindDrop(els.sourceB, 'b');
+watchText('a');
+watchText('b');
+state.docs.a.parsed = parseDocument('');
+state.docs.b.parsed = parseDocument('');
+renderChips();
+refresh();

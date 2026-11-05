@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiln 窑</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M6 26V16a10 10 0 0 1 20 0v10" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M12 26v-7a4 4 0 0 1 8 0v7" fill="none" stroke="currentColor" stroke-width="2"/>
+        <path d="M5 26h22" stroke="currentColor" stroke-width="2"/>
+      </svg>
+      <div>
+        <p class="brand-name">Kiln <span>窑</span></p>
+        <p class="brand-sub">把 JSON 看成树、表和路径</p>
+      </div>
+    </div>
+    <div class="modes" role="tablist" aria-label="工作方式">
+      <button class="pill" type="button" id="mode-view" role="tab" aria-selected="true">查看</button>
+      <button class="pill" type="button" id="mode-compare" role="tab" aria-selected="false">对比</button>
+    </div>
+    <div class="samples" aria-label="示例">
+      <button class="pill" type="button" data-sample="order">订单</button>
+      <button class="pill" type="button" data-sample="log">日志</button>
+      <button class="pill" type="button" data-sample="config">两份配置</button>
+    </div>
+  </header>
+  <main id="main">
+    <article class="source" id="source-a">
+      <header>
+        <h2>原文 A</h2>
+        <span class="badge" id="badge-a"></span>
+        <span class="lines" id="lines-a"></span>
+        <div class="tools">
+          <button class="pill" type="button" id="open-a">打开</button>
+          <button class="pill" type="button" id="tidy-a">整理</button>
+          <button class="pill" type="button" id="clear-a">清空</button>
+          <input id="file-a" type="file" accept=".json,.ndjson,.jsonl,.txt,application/json" hidden>
+        </div>
+      </header>
+      <p class="msg" id="msg-a"></p>
+      <textarea id="text-a" spellcheck="false" autocomplete="off" aria-label="原文 A" placeholder="把 JSON 或 NDJSON 贴在这里，也可以把文件拖进来"></textarea>
+      <form class="filter" id="filter-form">
+        <label for="filter">过滤</label>
+        <input id="filter" type="text" spellcheck="false" autocomplete="off" placeholder=".items[] | select(.price >= 80)">
+        <button class="pill primary" type="submit">应用</button>
+      </form>
+      <p class="filter-msg" id="filter-msg">Ctrl+Enter 应用过滤</p>
+      <div class="chips" id="chips"></div>
+      <details class="help">
+        <summary>过滤怎么写</summary>
+        <ul>
+          <li><code>.buyer.city</code> 取字段</li>
+          <li><code>.items[0]</code> 取下标，<code>.items[-1]</code> 取最后一项</li>
+          <li><code>.items[]</code> 展开数组，对象则会展开每个值</li>
+          <li><code>.items[] | select(.price >= 80)</code> 留下满足条件的项</li>
+          <li><code>select(.name ~= "杯")</code> 表示字符串包含</li>
+          <li><code>.["买家"]</code> 键名不是英文标识符时用方括号</li>
+          <li><code>keys</code>、<code>length</code>、<code>type</code> 接在路径后面</li>
+        </ul>
+        <p>只支持这一小段写法。条件可以是 <code>==</code> <code>!=</code> <code>&gt;</code> <code>&lt;</code> <code>&gt;=</code> <code>&lt;=</code>，右侧是字符串、数字、<code>true</code>、<code>false</code> 或 <code>null</code>。</p>
+      </details>
+      <p class="quiet">原文只留在这个页面里，服务只负责把窑打开。</p>
+    </article>
+    <article class="source" id="source-b" hidden>
+      <header>
+        <h2>对照 B</h2>
+        <span class="badge" id="badge-b"></span>
+        <span class="lines" id="lines-b"></span>
+        <div class="tools">
+          <button class="pill" type="button" id="open-b">打开</button>
+          <button class="pill" type="button" id="tidy-b">整理</button>
+          <button class="pill" type="button" id="swap">交换</button>
+          <button class="pill" type="button" id="clear-b">清空</button>
+          <input id="file-b" type="file" accept=".json,.ndjson,.jsonl,.txt,application/json" hidden>
+        </div>
+      </header>
+      <p class="msg" id="msg-b"></p>
+      <textarea id="text-b" spellcheck="false" autocomplete="off" aria-label="对照原文 B" placeholder="贴上另一份 JSON"></textarea>
+      <p class="quiet">差异比较的是两侧原文。树和表只看原文 A，并套用过滤。</p>
+    </article>
+    <section class="stage-wrap">
+      <div class="stage-bar">
+        <div class="tabs" role="tablist" aria-label="结果">
+          <button class="pill" type="button" data-view="tree" role="tab" aria-selected="true">树</button>
+          <button class="pill" type="button" data-view="table" role="tab" aria-selected="false">表</button>
+          <button class="pill" type="button" data-view="raw" role="tab" aria-selected="false">原文</button>
+          <button class="pill" type="button" data-view="diff" role="tab" aria-selected="false">差异</button>
+        </div>
+        <p id="summary" aria-live="polite">等一份 JSON</p>
+      </div>
+      <div class="pathbar">
+        <div class="paths">
+          <code id="path-jq">.</code>
+          <code id="path-pointer" class="pointer">空（整份）</code>
+        </div>
+        <div class="path-actions">
+          <span id="copy-state" aria-live="polite"></span>
+          <button class="pill" type="button" id="copy-path">复制路径</button>
+          <button class="pill" type="button" id="copy-pointer">复制指针</button>
+          <button class="pill" type="button" id="copy-value">复制值</button>
+        </div>
+      </div>
+      <div class="findbar">
+        <label for="find">查找</label>
+        <input id="find" type="text" spellcheck="false" autocomplete="off" placeholder="在结果里找键或值">
+        <button class="pill" type="button" id="find-prev">上一个</button>
+        <button class="pill" type="button" id="find-next">下一个</button>
+        <span id="find-count"></span>
+      </div>
+      <div id="stage"></div>
+    </section>
+  </main>
+  <noscript><p class="noscript">窑需要 JavaScript 才能整理 JSON。打开之后，数据也只留在这个页面里。</p></noscript>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
