@@ -47,6 +47,7 @@ const els = {
   filterMsg: document.querySelector('#filter-msg'),
   chips: document.querySelector('#chips'),
   summary: document.querySelector('#summary'),
+  context: document.querySelector('#context'),
   pathJq: document.querySelector('#path-jq'),
   pathPointer: document.querySelector('#path-pointer'),
   copyState: document.querySelector('#copy-state'),
@@ -255,6 +256,9 @@ function renderShell() {
   els.modeView.setAttribute('aria-selected', String(state.mode === 'view'));
   els.modeCompare.setAttribute('aria-selected', String(state.mode === 'compare'));
   for (const button of els.tabs) button.setAttribute('aria-selected', String(button.dataset.view === state.view));
+  if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
+  else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
+  else els.context.textContent = '右边是左边这份 JSON 的结果。';
 }
 
 function renderSourceMeta() {
@@ -310,14 +314,14 @@ function renderEmpty() {
   const title = document.createElement('h2');
   title.textContent = '先放进一份 JSON';
   const copy = document.createElement('p');
-  copy.textContent = '可以粘贴接口响应、拖进文件，或打开上面的示例。树、表、路径和对比都在这个页面里完成。';
+  copy.textContent = '贴上接口响应，或拖进文件。也可以直接打开一份例子，看树形、表格和路径。';
   const row = document.createElement('div');
   row.className = 'samples';
   for (const key of ['order', 'log', 'config']) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'pill';
-    button.textContent = samples[key].label;
+    button.textContent = `${samples[key].label} · ${samples[key].hint}`;
     button.addEventListener('click', () => loadSample(key));
     row.append(button);
   }
@@ -546,7 +550,7 @@ function renderRaw() {
 function renderDiff(diff) {
   const wrap = document.createElement('div');
   wrap.className = 'diff';
-  if (state.mode !== 'compare') return wrap.append(emptyNote('先切到对比，再贴上两份原文。')), wrap;
+  if (state.mode !== 'compare') return wrap.append(emptyNote('先切到比两份，再贴上另一份 JSON。')), wrap;
   if (!state.docs.a.text.trim() || !state.docs.b.text.trim()) return wrap.append(emptyNote('两边都要有原文。')), wrap;
   if (!state.docs.a.parsed?.ok || !state.docs.b.parsed?.ok) return wrap.append(emptyNote('两边都要是合法的 JSON 或 NDJSON。')), wrap;
   if (!diff.changes.length) return wrap.append(emptyNote('两份原文一样。')), wrap;

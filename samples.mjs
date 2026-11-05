@@ -1,6 +1,7 @@
 export const samples = {
   order: {
-    label: '订单',
+    label: '试订单',
+    hint: '筛出较贵的商品',
     mode: 'view',
     view: 'table',
     filter: '.items[] | select(.price >= 80)',
@@ -22,7 +23,8 @@ export const samples = {
 `
   },
   log: {
-    label: '日志',
+    label: '试日志',
+    hint: '只留失败的访问',
     mode: 'view',
     view: 'table',
     filter: '.[] | select(.status >= 500)',
@@ -33,7 +35,8 @@ export const samples = {
 `
   },
   config: {
-    label: '两份配置',
+    label: '试对比',
+    hint: '看两份配置差在哪',
     mode: 'compare',
     view: 'diff',
     filter: '',

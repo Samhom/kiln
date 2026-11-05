@@ -43,9 +43,11 @@ button { cursor: pointer; background: none; border: 0; padding: 0; }
 .top {
   display: flex;
   align-items: center;
-  gap: 18px;
+  flex-wrap: wrap;
+  gap: 12px 18px;
   padding: 14px 16px 0;
 }
+.steps { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 13px; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 220px; }
 .mark { width: 28px; height: 28px; color: var(--ember); }
 .brand-name, .brand-sub { margin: 0; }
@@ -145,8 +147,10 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
 .quiet { margin: 8px 0 0; }
 
 .stage-wrap { padding: 12px; }
-.stage-bar { justify-content: space-between; gap: 12px; }
-#summary { margin: 0; text-align: right; }
+.stage-bar { justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+#summary, .context { margin: 0; }
+.context { color: var(--gold); font-size: 12px; }
+#summary { text-align: right; }
 .pathbar, .findbar { margin-top: 10px; }
 .paths { display: flex; flex-direction: column; min-width: 0; }
 .paths code, .diff-row code {
