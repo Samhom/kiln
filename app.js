@@ -20,6 +20,8 @@ const state = {
   opened: new Set(),
   expansion: null,
   diffKind: 'all',
+  treeRows: [],
+  follow: false,
   docs: {
     a: {text: '', parsed: null, note: ''},
     b: {text: '', parsed: null, note: ''}
@@ -409,6 +411,7 @@ function drawTree(value, segments, depth, parent, hitSet, current, budget) {
   if (current && pointer === current) row.dataset.current = 'true';
   if (formatPointer(state.selection) === pointer) row.classList.add('is-selected');
   const branch = isBranch(value) && childCount(value) > 0;
+  state.treeRows.push({pointer, segments, value, branch, open});
   const twist = document.createElement(branch ? 'button' : 'span');
   twist.className = 'twist';
   twist.textContent = branch ? (open ? '▾' : '▸') : '·';
@@ -463,6 +466,7 @@ function drawTree(value, segments, depth, parent, hitSet, current, budget) {
 }
 
 function renderTree() {
+  state.treeRows = [];
   const tree = document.createElement('div');
   tree.className = 'tree';
   const current = state.hit >= 0 && state.hits[state.hit] ? formatPointer(state.hits[state.hit]) : '';
@@ -747,6 +751,10 @@ function renderStage() {
     els.stage.querySelector('[data-current="true"]')?.scrollIntoView({block: 'nearest'});
     state.pendingScroll = false;
   }
+  if (state.follow) {
+    els.stage.querySelector('.row.is-selected')?.scrollIntoView({block: 'nearest'});
+    state.follow = false;
+  }
 }
 
 function refresh() {
@@ -911,6 +919,48 @@ function jumpToError(side) {
   area.scrollTop = Math.max(0, (line - 3) * lineHeight);
 }
 
+function stepTree(key) {
+  if (state.view !== 'tree' || !state.treeRows.length) return false;
+  const pointer = formatPointer(state.selection);
+  let index = state.treeRows.findIndex((row) => row.pointer === pointer);
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    if (index < 0) index = 0;
+    else index += key === 'ArrowDown' ? 1 : -1;
+    index = Math.max(0, Math.min(state.treeRows.length - 1, index));
+    const row = state.treeRows[index];
+    state.follow = true;
+    choose(row.segments, row.value);
+    return true;
+  }
+  const row = index < 0 ? null : state.treeRows[index];
+  if (!row) return false;
+  if (key === 'ArrowRight') {
+    if (row.branch && !row.open) {
+      state.collapsed.delete(row.pointer);
+      state.opened.add(row.pointer);
+      state.follow = true;
+      refresh();
+    }
+    return true;
+  }
+  if (key === 'ArrowLeft') {
+    if (row.branch && row.open) {
+      state.collapsed.add(row.pointer);
+      state.opened.delete(row.pointer);
+      state.follow = true;
+      refresh();
+      return true;
+    }
+    if (row.segments.length) {
+      const parent = row.segments.slice(0, -1);
+      state.follow = true;
+      choose(parent, valueFor(parent));
+    }
+    return true;
+  }
+  return false;
+}
+
 function watchText(side) {
   const element = side === 'a' ? els.textA : els.textB;
   element.addEventListener('input', () => {
@@ -1027,6 +1077,10 @@ document.querySelector('#find-prev').addEventListener('click', () => focusHit(-1
 document.querySelector('#find-next').addEventListener('click', () => focusHit(1));
 document.addEventListener('keydown', (event) => {
   const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+  if (!typing && stepTree(event.key)) {
+    event.preventDefault();
+    return;
+  }
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault();
     window.clearTimeout(timers.filter);
