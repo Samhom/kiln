@@ -44,6 +44,8 @@ const els = {
   linesB: document.querySelector('#lines-b'),
   msgA: document.querySelector('#msg-a'),
   msgB: document.querySelector('#msg-b'),
+  jumpA: document.querySelector('#jump-a'),
+  jumpB: document.querySelector('#jump-b'),
   filter: document.querySelector('#filter'),
   filterForm: document.querySelector('#filter-form'),
   filterMsg: document.querySelector('#filter-msg'),
@@ -306,7 +308,9 @@ function renderSourceMeta() {
     const msg = side === 'a' ? els.msgA : els.msgB;
     badge.textContent = doc.parsed?.ok ? (doc.parsed.format === 'ndjson' ? 'NDJSON' : 'JSON') : '';
     lines.textContent = doc.text ? `${doc.text.split(/\n/).length} 行` : '';
+    const jump = side === 'a' ? els.jumpA : els.jumpB;
     msg.classList.toggle('is-error', Boolean(doc.text.trim() && doc.parsed && !doc.parsed.ok));
+    jump.hidden = !(doc.text.trim() && doc.parsed && !doc.parsed.ok && doc.parsed.line);
     if (!doc.text.trim()) msg.textContent = '';
     else if (!doc.parsed?.ok) msg.textContent = doc.parsed?.error || '';
     else msg.textContent = doc.note || '';
@@ -874,6 +878,22 @@ function focusHit(delta) {
   refresh();
 }
 
+function jumpToError(side) {
+  const doc = state.docs[side];
+  const line = doc.parsed?.line;
+  if (!line) return;
+  const area = side === 'a' ? els.textA : els.textB;
+  const lines = doc.text.split('\n');
+  let start = 0;
+  for (let index = 0; index < line - 1 && index < lines.length; index += 1) start += lines[index].length + 1;
+  const length = lines[line - 1]?.length ?? 0;
+  const column = Math.max(1, doc.parsed.column || 1);
+  area.focus();
+  area.setSelectionRange(start + Math.min(length, column - 1), start + length);
+  const lineHeight = Number.parseFloat(getComputedStyle(area).lineHeight) || 21;
+  area.scrollTop = Math.max(0, (line - 3) * lineHeight);
+}
+
 function watchText(side) {
   const element = side === 'a' ? els.textA : els.textB;
   element.addEventListener('input', () => {
@@ -926,6 +946,8 @@ document.querySelector('#clear-filter').addEventListener('click', () => {
   window.clearTimeout(timers.filter);
   applyFilter();
 });
+els.jumpA.addEventListener('click', () => jumpToError('a'));
+els.jumpB.addEventListener('click', () => jumpToError('b'));
 document.querySelector('#tidy-a').addEventListener('click', () => tidy('a'));
 document.querySelector('#tidy-b').addEventListener('click', () => tidy('b'));
 document.querySelector('#clear-a').addEventListener('click', () => setText('a', ''));

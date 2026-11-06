@@ -11,8 +11,13 @@ test('parses JSON, NDJSON, a BOM, and points at the broken line', () => {
   const lines = parseDocument('{"ok":true}\n{"ok":false}\n');
   assert.equal(lines.format, 'ndjson');
   assert.equal(lines.value.length, 2);
-  assert.match(parseDocument('{\n  "a": 1,\n}\n').error, /第 3 行/);
-  assert.equal(parseDocument('{"ok":true}\n[\n').error, '第 2 行不是合法的 JSON');
+  const broken = parseDocument('{\n  "a": 1,\n}\n');
+  assert.match(broken.error, /第 3 行/);
+  assert.equal(broken.line, 3);
+  assert.ok(broken.column >= 1);
+  const ndjson = parseDocument('{"ok":true}\n[\n');
+  assert.equal(ndjson.error, '第 2 行不是合法的 JSON');
+  assert.equal(ndjson.line, 2);
   assert.equal(parseDocument('').error, '还没有内容');
   assert.match(parseDocument('x'.repeat(8_000_001)).error, /8MB/);
 });

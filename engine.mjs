@@ -45,9 +45,9 @@ function positionOf(text, index) {
 
 function jsonError(text, error) {
   const match = /position (\d+)/.exec(String(error && error.message));
-  if (!match) return '这不是合法的 JSON，也不是按行分隔的 JSON';
+  if (!match) return {error: '这不是合法的 JSON，也不是按行分隔的 JSON'};
   const {line, column} = positionOf(text, Number(match[1]));
-  return `第 ${line} 行第 ${column} 列附近不是合法的 JSON`;
+  return {error: `第 ${line} 行第 ${column} 列附近不是合法的 JSON`, line, column};
 }
 
 function parseNdjson(text) {
@@ -62,7 +62,7 @@ function parseNdjson(text) {
       values.push(JSON.parse(line));
     } catch {
       if (seen === 1 && values.length === 0) return null;
-      return {ok: false, error: `第 ${i + 1} 行不是合法的 JSON`};
+      return {ok: false, error: `第 ${i + 1} 行不是合法的 JSON`, line: i + 1, column: 1};
     }
   }
   if (values.length < 2) return null;
@@ -80,7 +80,7 @@ export function parseDocument(text) {
   } catch (error) {
     const ndjson = parseNdjson(text);
     if (ndjson) return {...ndjson, bytes};
-    return {ok: false, error: jsonError(text, error)};
+    return {ok: false, ...jsonError(text, error)};
   }
 }
 

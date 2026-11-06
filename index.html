@@ -44,7 +44,10 @@
           <input id="file-a" type="file" accept=".json,.ndjson,.jsonl,.txt,application/json" hidden>
         </div>
       </header>
-      <p class="msg" id="msg-a"></p>
+      <div class="msg-row">
+        <p class="msg" id="msg-a"></p>
+        <button class="pill" type="button" id="jump-a" hidden>跳到出错处</button>
+      </div>
       <textarea id="text-a" spellcheck="false" autocomplete="off" aria-label="这份 JSON" placeholder="把 JSON 贴在这里，或把文件拖进来"></textarea>
       <form class="filter" id="filter-form">
         <label for="filter">过滤</label>
@@ -82,7 +85,10 @@
           <input id="file-b" type="file" accept=".json,.ndjson,.jsonl,.txt,application/json" hidden>
         </div>
       </header>
-      <p class="msg" id="msg-b"></p>
+      <div class="msg-row">
+        <p class="msg" id="msg-b"></p>
+        <button class="pill" type="button" id="jump-b" hidden>跳到出错处</button>
+      </div>
       <textarea id="text-b" spellcheck="false" autocomplete="off" aria-label="另一份 JSON" placeholder="贴上要对比的另一份 JSON"></textarea>
       <p class="quiet">差异比较的是这里和左边。树、表和文本仍只看左边，并套用过滤。</p>
     </article>

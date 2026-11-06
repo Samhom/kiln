@@ -112,7 +112,8 @@ main.is-compare { grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) m
   letter-spacing: 0.06em;
 }
 .badge:empty, .lines:empty { display: none; }
-.msg { min-height: 1.2em; margin: 8px 0; font-size: 13px; color: var(--glaze); }
+.msg-row { display: flex; align-items: center; gap: 8px; min-height: 1.2em; margin: 8px 0; }
+.msg { flex: 1; margin: 0; font-size: 13px; color: var(--glaze); }
 .msg.is-error, .filter-msg.is-error { color: var(--clay); }
 textarea, input[type="text"] {
   width: 100%;
