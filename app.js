@@ -144,6 +144,23 @@ function flash(message) {
   }, 1600);
 }
 
+function downloadResult() {
+  if (state.display === undefined) {
+    flash('还没有可下载的结果');
+    return;
+  }
+  const blob = new Blob([`${JSON.stringify(state.display, null, 2)}\n`], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'kiln-result.json';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  flash('已开始下载');
+}
+
 async function copyText(text, message) {
   try {
     await navigator.clipboard.writeText(text);
@@ -984,6 +1001,7 @@ document.querySelector('#copy-value').addEventListener('click', () => {
   }
   copyText(JSON.stringify(value, null, 2), '已复制值');
 });
+document.querySelector('#download').addEventListener('click', downloadResult);
 els.find.addEventListener('input', () => {
   state.find = els.find.value;
   state.hit = -1;
