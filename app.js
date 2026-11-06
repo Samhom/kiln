@@ -20,6 +20,7 @@ const state = {
   opened: new Set(),
   expansion: null,
   diffKind: 'all',
+  glance: false,
   treeRows: [],
   follow: false,
   docs: {
@@ -656,6 +657,8 @@ function renderDiff(diff) {
     return wrap;
   }
   for (const change of visible) {
+    const line = document.createElement('div');
+    line.className = 'diff-line';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `diff-row kind-${change.kind}`;
@@ -682,9 +685,36 @@ function renderDiff(diff) {
       button.append(after);
     }
     button.addEventListener('click', () => choose(change.segments, change.kind === 'removed' ? change.before : change.after));
-    wrap.append(button);
+    const look = document.createElement('button');
+    look.type = 'button';
+    look.className = 'pill look';
+    look.textContent = '只看这一处';
+    look.addEventListener('click', () => focusChange(change));
+    line.append(button, look);
+    wrap.append(line);
   }
   return wrap;
+}
+
+function focusChange(change) {
+  const path = formatJq(change.segments);
+  els.filter.value = path;
+  state.filter = path;
+  state.mode = 'view';
+  state.view = 'tree';
+  state.glance = false;
+  state.docs.a.note = '';
+  invalidate();
+  compute();
+  if (state.outcome?.ok && state.outcome.values.length) remember(path);
+  else if (change.kind === 'added') {
+    state.outcome = {ok: true, values: [change.after]};
+    state.display = change.after;
+    state.pick = {segments: [], value: change.after};
+    state.docs.a.note = '这一处是新增，树里显示的是另一份的值，左边原文没变。';
+    state.glance = true;
+  }
+  refresh();
 }
 
 function renderSummary(diff) {
@@ -785,6 +815,10 @@ function renderNoMatch() {
 }
 
 function applyFilter({rememberResult = false} = {}) {
+  if (state.glance) {
+    state.glance = false;
+    state.docs.a.note = '';
+  }
   const next = els.filter.value;
   if (next !== state.filter) {
     state.filter = next;
