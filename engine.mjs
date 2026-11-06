@@ -523,3 +523,61 @@ export function runFilter(value, source) {
     throw error;
   }
 }
+
+function joinPath(prefix, key) {
+  const piece = formatJq([{type: 'key', key}]);
+  return prefix ? `${prefix}${piece}` : piece;
+}
+
+function fieldPaths(object, prefix) {
+  const paths = [];
+  for (const key of Object.keys(object)) {
+    if (paths.length >= 3) break;
+    const child = own(object, key);
+    const path = joinPath(prefix, key);
+    paths.push(Array.isArray(child) && child.some(isPlain) ? `${path}[]` : path);
+  }
+  return paths;
+}
+
+function numberCut(numbers) {
+  const unique = [...new Set(numbers.filter((item) => Number.isFinite(item)).slice(0, 20))].sort((a, b) => a - b);
+  if (!unique.length) return null;
+  return unique[Math.ceil((unique.length - 1) / 2)];
+}
+
+function selectOn(rows, sample, arrayPath) {
+  const key = Object.keys(sample).find((name) => typeof own(sample, name) === 'number' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
+  if (!key) return '';
+  const cut = numberCut(rows.map((row) => (isPlain(row) ? own(row, key) : undefined)));
+  if (cut === null) return '';
+  return `${arrayPath} | select(.${key} >= ${JSON.stringify(cut)})`;
+}
+
+export function suggestFilters(value) {
+  const out = [];
+  const add = (text) => {
+    if (text && text.length <= MAX_FILTER && !out.includes(text) && out.length < 6) out.push(text);
+  };
+  if (Array.isArray(value)) {
+    const sample = value.find(isPlain);
+    add('.[]');
+    if (sample) for (const path of fieldPaths(sample, '.[]')) add(path);
+    if (sample) add(selectOn(value, sample, '.[]'));
+    add('length');
+    return out;
+  }
+  if (!isPlain(value)) return out;
+  add('keys');
+  for (const path of fieldPaths(value, '')) add(path);
+  const arrayKey = Object.keys(value).find((key) => {
+    const child = own(value, key);
+    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && Array.isArray(child) && child.some(isPlain);
+  });
+  if (arrayKey) {
+    add(`.${arrayKey}[]`);
+    add(selectOn(own(value, arrayKey), own(value, arrayKey).find(isPlain), `.${arrayKey}[]`));
+  }
+  add('length');
+  return out;
+}

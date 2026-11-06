@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {diffValues, formatJq, formatPointer, parseDocument, runFilter, valueAt} from '../engine.mjs';
+import {diffValues, formatJq, formatPointer, parseDocument, runFilter, suggestFilters, valueAt} from '../engine.mjs';
 import {samples} from '../samples.mjs';
 import {createApp} from '../server.mjs';
 
@@ -15,6 +15,22 @@ test('parses JSON, NDJSON, a BOM, and points at the broken line', () => {
   assert.equal(parseDocument('{"ok":true}\n[\n').error, '第 2 行不是合法的 JSON');
   assert.equal(parseDocument('').error, '还没有内容');
   assert.match(parseDocument('x'.repeat(8_000_001)).error, /8MB/);
+});
+
+test('suggests filters that fit the open document', () => {
+  const order = parseDocument(samples.order.a).value;
+  const hints = suggestFilters(order);
+  assert.ok(hints.includes('keys'));
+  assert.ok(hints.includes('.items[]'));
+  const select = hints.find((item) => item.startsWith('.items[] | select(.price >= '));
+  const paid = runFilter(order, select);
+  assert.ok(paid.values.length >= 1);
+  assert.ok(paid.values.length < order.items.length);
+  const log = suggestFilters(parseDocument(samples.log.a).value);
+  assert.ok(log.includes('.[]'));
+  assert.ok(log.some((item) => item.includes('.status')));
+  assert.ok(suggestFilters({买家: 1}).includes('.["买家"]'));
+  assert.deepEqual(suggestFilters(null), []);
 });
 
 test('filters the order, the log, and a Chinese key without executing text', () => {

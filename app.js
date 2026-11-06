@@ -1,4 +1,4 @@
-import {diffValues, formatJq, formatPointer, parseDocument, runFilter, summarize, typeName, valueAt} from './engine.mjs';
+import {diffValues, formatJq, formatPointer, parseDocument, runFilter, suggestFilters, summarize, typeName, valueAt} from './engine.mjs';
 import {samples} from './samples.mjs';
 
 const HINTS = ['.items[] | select(.price >= 80)', '.[] | select(.status >= 500)', '.buyer.city', 'keys'];
@@ -322,10 +322,19 @@ function renderSourceMeta() {
   else els.filterMsg.textContent = state.filter.trim() ? '1 条结果' : '输入后会自动更新右边';
 }
 
+function activeHints() {
+  if (state.docs.a.parsed?.ok) {
+    const suggested = suggestFilters(state.docs.a.parsed.value);
+    if (suggested.length) return suggested;
+  }
+  return HINTS;
+}
+
 function renderChips() {
   els.chips.replaceChildren();
-  const recent = readRecent().filter((item) => !HINTS.includes(item));
-  for (const text of [...HINTS, ...recent]) {
+  const hints = activeHints();
+  const recent = readRecent().filter((item) => !hints.includes(item));
+  for (const text of [...hints, ...recent]) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'chip';
@@ -722,6 +731,7 @@ function renderStage() {
 function refresh() {
   renderShell();
   renderSourceMeta();
+  renderChips();
   renderStage();
 }
 
@@ -759,7 +769,6 @@ function applyFilter({rememberResult = false} = {}) {
   }
   compute();
   if (rememberResult && state.outcome?.ok) remember(state.filter);
-  renderChips();
   refresh();
 }
 
