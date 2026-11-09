@@ -228,6 +228,7 @@ pre {
 
 .diff { display: flex; flex-direction: column; }
 .diff-line { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--line); }
+.diff-line[data-current="true"] { background: rgba(255, 106, 44, 0.12); }
 .diff-row {
   display: grid;
   grid-template-columns: 36px minmax(140px, 0.9fr) minmax(0, 1fr) 20px minmax(0, 1fr);

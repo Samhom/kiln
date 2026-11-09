@@ -23,6 +23,7 @@ const state = {
   glance: false,
   treeRows: [],
   follow: false,
+  diffChanges: [],
   docs: {
     a: {text: '', parsed: null, note: ''},
     b: {text: '', parsed: null, note: ''}
@@ -325,6 +326,7 @@ function renderShell() {
   els.modeCompare.setAttribute('aria-selected', String(state.mode === 'compare'));
   for (const button of els.tabs) button.setAttribute('aria-selected', String(button.dataset.view === state.view));
   els.treeTools.hidden = state.view !== 'tree' || state.display === undefined;
+  els.find.placeholder = state.view === 'diff' ? '路径或值，回车到下一处差异' : '键或值，回车到下一处';
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
@@ -652,6 +654,13 @@ function renderRaw() {
   return wrap;
 }
 
+function changeText(change) {
+  const parts = [formatJq(change.segments)];
+  if (change.kind !== 'added') parts.push(compactJson(change.before));
+  if (change.kind !== 'removed') parts.push(compactJson(change.after));
+  return parts.join('\n').toLowerCase();
+}
+
 function renderDiff(diff) {
   const wrap = document.createElement('div');
   wrap.className = 'diff';
@@ -678,14 +687,18 @@ function renderDiff(diff) {
     filters.append(choice);
   }
   wrap.append(filters);
-  const visible = diff.changes.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
+  const query = state.find.trim().toLowerCase();
+  let visible = diff.changes.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
+  if (query) visible = visible.filter((change) => changeText(change).includes(query));
   if (!visible.length) {
-    wrap.append(emptyNote('这一类里没有差异。'));
+    wrap.append(emptyNote(query ? '没有找到。' : '这一类里没有差异。'));
     return wrap;
   }
+  const current = state.hit >= 0 && state.hits[state.hit] ? formatPointer(state.hits[state.hit]) : '';
   for (const change of visible) {
     const line = document.createElement('div');
     line.className = 'diff-line';
+    if (current && formatPointer(change.segments) === current) line.dataset.current = 'true';
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `diff-row kind-${change.kind}`;
@@ -765,13 +778,25 @@ function renderSummary(diff) {
 }
 
 function syncHits() {
-  state.hits = state.display === undefined ? [] : collectHits(state.display, state.find.trim());
+  const query = state.find.trim();
+  if (state.view === 'diff') {
+    const needle = query.toLowerCase();
+    const pool = state.diffChanges.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
+    state.hits = needle ? pool.filter((change) => changeText(change).includes(needle)).map((change) => change.segments) : [];
+  } else state.hits = state.display === undefined ? [] : collectHits(state.display, query);
   if (state.hit >= state.hits.length) state.hit = 0;
 }
 
 function revealHit() {
   const segments = state.hits[state.hit];
   if (!segments) return;
+  if (state.view === 'diff') {
+    const change = state.diffChanges.find((item) => formatPointer(item.segments) === formatPointer(segments));
+    state.selection = segments.map((seg) => ({...seg}));
+    state.pick = {segments: state.selection, value: change ? (change.kind === 'removed' ? change.before : change.after) : undefined};
+    state.pendingScroll = true;
+    return;
+  }
   for (let i = 0; i < segments.length; i += 1) {
     const pointer = formatPointer(segments.slice(0, i));
     state.collapsed.delete(pointer);
@@ -779,20 +804,21 @@ function revealHit() {
   }
   state.selection = segments.map((seg) => ({...seg}));
   state.pick = {segments: state.selection, value: valueAt(state.display, state.selection)};
-  if (state.view === 'raw' || state.view === 'diff') state.view = 'tree';
+  if (state.view === 'raw') state.view = 'tree';
   state.pendingScroll = true;
 }
 
 function renderStage() {
+  let diff = null;
+  if (state.view === 'diff' && state.mode === 'compare' && state.docs.a.parsed?.ok && state.docs.b.parsed?.ok) {
+    diff = diffValues(state.docs.a.parsed.value, state.docs.b.parsed.value);
+  }
+  state.diffChanges = diff?.changes || [];
   syncHits();
   const query = state.find.trim();
   const capped = state.hits.length === 200 ? '，已到上限' : '';
   els.findCount.textContent = !query ? '' : state.hits.length ? (state.hit < 0 ? `${state.hits.length} 处${capped}` : `${state.hit + 1} / ${state.hits.length}${capped}`) : '没有找到';
   renderPath();
-  let diff = null;
-  if (state.view === 'diff' && state.mode === 'compare' && state.docs.a.parsed?.ok && state.docs.b.parsed?.ok) {
-    diff = diffValues(state.docs.a.parsed.value, state.docs.b.parsed.value);
-  }
   renderSummary(diff);
   let view;
   if (!state.docs.a.text.trim() && state.view !== 'diff') view = renderEmpty();
