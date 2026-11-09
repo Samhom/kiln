@@ -143,6 +143,10 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
   font-family: var(--mono);
   font-size: 12px;
 }
+.chip-recent { display: inline-flex; align-items: center; max-width: 100%; border: 1px dashed #5c4b40; border-radius: 999px; }
+.chip-recent .chip { border: 0; padding-right: 2px; }
+.chip-x { padding: 2px 8px 4px 2px; color: var(--faint); font-size: 14px; line-height: 1; }
+.chip-x:hover { color: var(--clay); }
 .help { margin-top: 8px; color: var(--muted); font-size: 13px; }
 .help summary { cursor: pointer; }
 .help ul { margin: 8px 0; padding-left: 18px; }

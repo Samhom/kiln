@@ -128,15 +128,22 @@ function readRecent() {
   }
 }
 
-function remember(filter) {
-  const text = filter.trim();
-  if (!text || text === '.' || text.length > 2000) return;
+function writeRecent(filters) {
   try {
-    const next = [text, ...readRecent().filter((item) => item !== text)].slice(0, 6);
-    sessionStorage.setItem('kiln.filters', JSON.stringify(next));
+    sessionStorage.setItem('kiln.filters', JSON.stringify(filters.slice(0, 6)));
   } catch {
     // 记不住最近的过滤也不影响使用。
   }
+}
+
+function remember(filter) {
+  const text = filter.trim();
+  if (!text || text === '.' || text.length > 2000) return;
+  writeRecent([text, ...readRecent().filter((item) => item !== text)]);
+}
+
+function forget(filter) {
+  writeRecent(readRecent().filter((item) => item !== filter));
 }
 
 function flash(message) {
@@ -354,21 +361,38 @@ function activeHints() {
   return HINTS;
 }
 
+function chipButton(text) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'chip';
+  button.textContent = text;
+  button.addEventListener('click', () => {
+    els.filter.value = text;
+    window.clearTimeout(timers.filter);
+    applyFilter({rememberResult: true});
+  });
+  return button;
+}
+
 function renderChips() {
   els.chips.replaceChildren();
   const hints = activeHints();
   const recent = readRecent().filter((item) => !hints.includes(item));
-  for (const text of [...hints, ...recent]) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'chip';
-    button.textContent = text;
-    button.addEventListener('click', () => {
-      els.filter.value = text;
-      window.clearTimeout(timers.filter);
-      applyFilter({rememberResult: true});
+  for (const text of hints) els.chips.append(chipButton(text));
+  for (const text of recent) {
+    const group = document.createElement('span');
+    group.className = 'chip-recent';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'chip-x';
+    remove.textContent = '×';
+    remove.setAttribute('aria-label', `忘掉 ${text}`);
+    remove.addEventListener('click', () => {
+      forget(text);
+      renderChips();
     });
-    els.chips.append(button);
+    group.append(chipButton(text), remove);
+    els.chips.append(group);
   }
 }
 
