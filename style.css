@@ -217,6 +217,7 @@ tbody tr:hover { background: rgba(255, 106, 44, 0.06); }
 td.is-selected { box-shadow: inset 3px 0 0 var(--ember); background: rgba(255, 106, 44, 0.12); }
 .table-note { margin: 0 0 8px; color: var(--gold); font-size: 12px; }
 .raw-wrap { overflow: auto; height: 100%; }
+pre.is-wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 pre {
   margin: 0;
   font-family: var(--mono);

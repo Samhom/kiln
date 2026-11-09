@@ -23,6 +23,7 @@ const state = {
   glance: false,
   treeRows: [],
   follow: false,
+  wrap: false,
   diffChanges: [],
   docs: {
     a: {text: '', parsed: null, note: ''},
@@ -64,6 +65,8 @@ const els = {
   findCount: document.querySelector('#find-count'),
   stage: document.querySelector('#stage'),
   treeTools: document.querySelector('#tree-tools'),
+  rawTools: document.querySelector('#raw-tools'),
+  toggleWrap: document.querySelector('#toggle-wrap'),
   tabs: [...document.querySelectorAll('[data-view]')]
 };
 
@@ -341,6 +344,8 @@ function renderShell() {
   els.modeCompare.setAttribute('aria-selected', String(state.mode === 'compare'));
   for (const button of els.tabs) button.setAttribute('aria-selected', String(button.dataset.view === state.view));
   els.treeTools.hidden = state.view !== 'tree' || state.display === undefined;
+  els.rawTools.hidden = state.view !== 'raw' || state.display === undefined;
+  els.toggleWrap.setAttribute('aria-pressed', String(state.wrap));
   els.find.placeholder = state.view === 'diff' ? '路径或值，回车到下一处差异' : '键或值，回车到下一处';
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
@@ -665,6 +670,7 @@ function renderRaw() {
   const pre = document.createElement('pre');
   const full = JSON.stringify(state.display, null, 2);
   pre.textContent = full.length > 200000 ? `${full.slice(0, 200000)}\n… 后面省略了，复制值仍是完整结果` : full;
+  if (state.wrap) pre.classList.add('is-wrap');
   wrap.append(pre);
   return wrap;
 }
@@ -1174,6 +1180,10 @@ document.querySelector('#collapse-all').addEventListener('click', () => {
   state.expansion = 'shut';
   state.opened = new Set();
   state.collapsed = new Set();
+  refresh();
+});
+els.toggleWrap.addEventListener('click', () => {
+  state.wrap = !state.wrap;
   refresh();
 });
 document.querySelector('#find-prev').addEventListener('click', () => focusHit(-1));
