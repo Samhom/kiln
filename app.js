@@ -156,6 +156,21 @@ function flash(message) {
   }, 1600);
 }
 
+function usePath() {
+  if (!state.selection.length) {
+    flash('先在右边点一行');
+    return;
+  }
+  const current = state.filter.trim();
+  if (current && current !== '.') {
+    flash('先清除过滤，这条路径才对得上原文');
+    return;
+  }
+  els.filter.value = formatJq(state.selection);
+  window.clearTimeout(timers.filter);
+  applyFilter({rememberResult: true});
+}
+
 function downloadResult() {
   if (state.display === undefined) {
     flash('还没有可下载的结果');
@@ -1122,6 +1137,7 @@ document.querySelector('#swap').addEventListener('click', () => {
   refresh();
 });
 document.querySelector('#copy-path').addEventListener('click', () => copyText(formatJq(state.selection), '已复制路径'));
+document.querySelector('#use-path').addEventListener('click', usePath);
 document.querySelector('#copy-pointer').addEventListener('click', () => {
   const pointer = formatPointer(state.selection);
   copyText(pointer, pointer ? '已复制指针' : '已复制根指针（空字符串）');
