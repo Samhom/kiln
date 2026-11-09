@@ -56,6 +56,7 @@ const els = {
   summary: document.querySelector('#summary'),
   context: document.querySelector('#context'),
   crumbs: document.querySelector('#crumbs'),
+  pathJq: document.querySelector('#path-jq'),
   pathPointer: document.querySelector('#path-pointer'),
   copyState: document.querySelector('#copy-state'),
   find: document.querySelector('#find'),
@@ -311,7 +312,9 @@ function renderPath() {
     button.addEventListener('click', () => choose(level, valueFor(level)));
     els.crumbs.append(button);
   });
+  const path = formatJq(state.selection);
   const pointer = formatPointer(state.selection);
+  els.pathJq.textContent = path;
   els.pathPointer.textContent = pointer ? `指针 ${pointer}` : '点一层可以回到那里';
 }
 

@@ -169,7 +169,8 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
   font-size: 13px;
   overflow-wrap: anywhere;
 }
-.pointer { color: var(--faint); }
+.pointer, .jq-path { color: var(--faint); }
+.jq-path { color: var(--glaze); user-select: text; }
 .path-actions { margin-left: auto; }
 #copy-state { min-width: 4em; }
 #stage { flex: 1; min-height: 0; overflow: auto; margin-top: 10px; }
