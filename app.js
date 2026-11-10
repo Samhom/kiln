@@ -122,6 +122,27 @@ function segmentLabel(seg) {
   return seg.type === 'index' ? `[${seg.index}]` : seg.key;
 }
 
+function fillMatch(element, text, query) {
+  const source = String(text);
+  const needle = query.trim();
+  if (!needle) {
+    element.textContent = source;
+    return;
+  }
+  const at = source.toLowerCase().indexOf(needle.toLowerCase());
+  if (at < 0) {
+    element.textContent = source;
+    return;
+  }
+  element.replaceChildren();
+  if (at > 0) element.append(source.slice(0, at));
+  const mark = document.createElement('mark');
+  mark.textContent = source.slice(at, at + needle.length);
+  element.append(mark);
+  const rest = source.slice(at + needle.length);
+  if (rest) element.append(rest);
+}
+
 function compactJson(value) {
   const text = JSON.stringify(value);
   return text.length > 160 ? `${text.slice(0, 157)}…` : text;
@@ -504,15 +525,15 @@ function drawTree(value, segments, depth, parent, hitSet, current, budget) {
   main.className = 'node';
   const key = document.createElement('span');
   key.className = 'k';
-  key.textContent = segments.length ? segmentLabel(segments.at(-1)) : '根';
+  fillMatch(key, segments.length ? segmentLabel(segments.at(-1)) : '根', state.find);
   const shown = document.createElement('span');
   if (!isBranch(value)) {
     shown.className = 'v';
     shown.dataset.kind = typeName(value);
-    shown.textContent = previewPrimitive(value);
+    fillMatch(shown, previewPrimitive(value), state.find);
   } else {
     shown.className = 'v dim';
-    shown.textContent = previewBranch(value);
+    fillMatch(shown, previewBranch(value), state.find);
   }
   main.append(key, shown);
   main.addEventListener('click', () => choose(segments, value));
@@ -563,7 +584,7 @@ function valueCell(text, segments, value) {
   const td = document.createElement('td');
   const button = document.createElement('button');
   button.type = 'button';
-  button.textContent = text;
+  fillMatch(button, text, state.find);
   if (formatPointer(state.selection) === formatPointer(segments)) td.classList.add('is-selected');
   button.addEventListener('click', () => choose(segments, value));
   td.append(button);
@@ -747,12 +768,12 @@ function renderDiff(diff) {
     mark.className = 'mark';
     mark.textContent = KIND_LABEL[change.kind];
     const path = document.createElement('code');
-    path.textContent = formatJq(change.segments);
+    fillMatch(path, formatJq(change.segments), state.find);
     button.append(mark, path);
     if (change.kind !== 'added') {
       const before = document.createElement('span');
       before.className = 'diff-value';
-      before.textContent = compactJson(change.before);
+      fillMatch(before, compactJson(change.before), state.find);
       button.append(before);
     } else button.append(document.createElement('span'));
     const arrow = document.createElement('span');
@@ -762,7 +783,7 @@ function renderDiff(diff) {
     if (change.kind !== 'removed') {
       const after = document.createElement('span');
       after.className = 'diff-value';
-      after.textContent = compactJson(change.after);
+      fillMatch(after, compactJson(change.after), state.find);
       button.append(after);
     }
     button.addEventListener('click', () => choose(change.segments, change.kind === 'removed' ? change.before : change.after));

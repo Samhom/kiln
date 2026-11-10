@@ -190,6 +190,7 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
   padding: 2px 4px;
   border-radius: 6px;
 }
+mark { background: #e6c27a; color: #1a120e; padding: 0 1px; border-radius: 2px; }
 .row.is-hit .node { background: rgba(230, 194, 122, 0.08); }
 .row.is-selected .node, .row[data-current="true"] .node { background: rgba(255, 106, 44, 0.16); box-shadow: inset 3px 0 0 var(--ember); }
 .k { color: var(--ink); }
