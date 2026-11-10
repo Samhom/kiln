@@ -566,6 +566,58 @@ function renderTree() {
   return tree;
 }
 
+function searchable(value) {
+  if (typeof value === 'string') return value.length > 500 ? value.slice(0, 500) : value;
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? '';
+  if (Array.isArray(value)) return `数组 ${value.length}`;
+  return Object.keys(value).slice(0, 24).join(' ');
+}
+
+function rowMatches(item, index, query) {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  if (String(index).includes(needle)) return true;
+  if (!isPlain(item)) return searchable(item).toLowerCase().includes(needle);
+  for (const key of Object.keys(item)) {
+    if (key.toLowerCase().includes(needle)) return true;
+    if (searchable(readOwn(item, key)).toLowerCase().includes(needle)) return true;
+  }
+  return false;
+}
+
+function numberSpan(rows, key) {
+  let min = Infinity;
+  let max = -Infinity;
+  let count = 0;
+  for (const row of rows) {
+    const value = readOwn(row, key);
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    count += 1;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  if (count < 2 || min === max) return '';
+  return `${min}–${max}`;
+}
+
+function markCurrent(row, segments) {
+  if (state.hit >= 0 && state.hits[state.hit] && formatPointer(state.hits[state.hit]) === formatPointer(segments)) {
+    row.dataset.current = 'true';
+  }
+}
+
+function tableHits(value, query) {
+  if (value === undefined || !query.trim()) return [];
+  if (Array.isArray(value)) {
+    return value.slice(0, 5000).flatMap((item, index) => (rowMatches(item, index, query) ? [[{type: 'index', index}]] : [])).slice(0, 200);
+  }
+  if (isPlain(value)) {
+    const needle = query.trim().toLowerCase();
+    return Object.keys(value).filter((key) => key.toLowerCase().includes(needle) || searchable(readOwn(value, key)).toLowerCase().includes(needle)).slice(0, 200).map((key) => [{type: 'key', key}]);
+  }
+  return rowMatches(value, 0, query) ? [[{type: 'index', index: 0}]] : [];
+}
+
 function headerCell(label, sort) {
   const th = document.createElement('th');
   const button = document.createElement('button');
@@ -619,7 +671,10 @@ function renderObjectTable(rows) {
   const limited = columns.length === 24 && rows.slice(0, 500).some((row) => Object.keys(row).some((key) => !seen.has(key)));
   let indexed = rows.map((item, index) => ({index, item}));
   const huge = indexed.length > 5000;
-  if (huge) indexed = indexed.slice(0, 300);
+  const needle = state.find.trim();
+  if (huge) indexed = indexed.slice(0, needle ? 5000 : 300);
+  const pool = indexed.length;
+  if (needle) indexed = indexed.filter((row) => rowMatches(row.item, row.index, needle));
   if (state.sort) {
     const dir = state.sort.dir;
     indexed.sort((a, b) => state.sort.index ? (a.index - b.index) * dir : compareCells(readOwn(a.item, state.sort.key), readOwn(b.item, state.sort.key), dir));
@@ -627,19 +682,25 @@ function renderObjectTable(rows) {
   const clipped = !huge && indexed.length > 300;
   const visible = indexed.slice(0, 300);
   const notes = [];
-  if (huge) notes.push('行数很多，表只取前 300 行');
-  else if (clipped) notes.push(`先显示 300 行，共 ${rows.length} 行`);
+  if (needle) notes.push(`${huge ? `在前 ${pool} 行里找到 ${indexed.length} 行` : `找到 ${indexed.length} 行`}${indexed.length > 300 ? '，先显示 300 行' : ''}`);
+  if (!needle && huge) notes.push('行数很多，表只取前 300 行');
+  else if (!needle && clipped) notes.push(`先显示 300 行，共 ${rows.length} 行`);
   if (limited) notes.push('列停在 24 个');
   const table = document.createElement('table');
   const head = document.createElement('tr');
   head.append(headerCell('序号', {index: true, key: '#'}));
-  for (const key of columns) head.append(headerCell(key, {index: false, key}));
+  for (const key of columns) {
+    const span = numberSpan(indexed.map((row) => row.item), key);
+    head.append(headerCell(span ? `${key} · ${span}` : key, {index: false, key}));
+  }
   const thead = document.createElement('thead');
   thead.append(head);
   const tbody = document.createElement('tbody');
   for (const row of visible) {
     const tr = document.createElement('tr');
-    tr.append(valueCell(String(row.index), [{type: 'index', index: row.index}], row.item));
+    const segments = [{type: 'index', index: row.index}];
+    markCurrent(tr, segments);
+    tr.append(valueCell(String(row.index), segments, row.item));
     for (const key of columns) {
       const has = Object.prototype.hasOwnProperty.call(row.item, key);
       const value = has ? readOwn(row.item, key) : undefined;
@@ -654,9 +715,15 @@ function renderObjectTable(rows) {
 function renderKeyTable(value) {
   let rows = Object.keys(value).map((key) => ({key, value: readOwn(value, key)}));
   const total = rows.length;
+  const needle = state.find.trim();
+  if (needle) {
+    const lower = needle.toLowerCase();
+    rows = rows.filter((row) => row.key.toLowerCase().includes(lower) || searchable(row.value).toLowerCase().includes(lower));
+  }
+  const found = rows.length;
   if (state.sort?.key === '键') rows.sort((a, b) => a.key.localeCompare(b.key, 'zh') * state.sort.dir);
   if (state.sort?.key === '值') rows.sort((a, b) => compareCells(a.value, b.value, state.sort.dir));
-  const clipped = total > 300;
+  const clipped = rows.length > 300;
   rows = rows.slice(0, 300);
   const table = document.createElement('table');
   const head = document.createElement('tr');
@@ -666,18 +733,26 @@ function renderKeyTable(value) {
   const tbody = document.createElement('tbody');
   for (const row of rows) {
     const tr = document.createElement('tr');
+    const segments = [{type: 'key', key: row.key}];
+    markCurrent(tr, segments);
     tr.append(
-      valueCell(row.key, [{type: 'key', key: row.key}], row.value),
-      valueCell(cellText(row.value), [{type: 'key', key: row.key}], row.value)
+      valueCell(row.key, segments, row.value),
+      valueCell(cellText(row.value), segments, row.value)
     );
     tbody.append(tr);
   }
   table.append(thead, tbody);
-  return tableFrame(clipped ? `先显示 300 行，共 ${total} 个键` : '', table);
+  const note = needle
+    ? `找到 ${found} 行${clipped ? '，先显示 300 行' : ''}`
+    : (clipped ? `先显示 300 行，共 ${total} 个键` : '');
+  return tableFrame(note, table);
 }
 
 function renderListTable(rows) {
   let indexed = rows.map((item, index) => ({index, item}));
+  const needle = state.find.trim();
+  if (needle) indexed = indexed.filter((row) => rowMatches(row.item, row.index, needle));
+  const found = indexed.length;
   if (state.sort?.key === '值') indexed.sort((a, b) => compareCells(a.item, b.item, state.sort.dir));
   if (state.sort?.index) indexed.sort((a, b) => (a.index - b.index) * state.sort.dir);
   const clipped = indexed.length > 300;
@@ -690,11 +765,15 @@ function renderListTable(rows) {
   for (const row of indexed.slice(0, 300)) {
     const tr = document.createElement('tr');
     const segments = [{type: 'index', index: row.index}];
+    markCurrent(tr, segments);
     tr.append(valueCell(String(row.index), segments, row.item), valueCell(cellText(row.item), segments, row.item));
     tbody.append(tr);
   }
   table.append(thead, tbody);
-  return tableFrame(clipped ? `先显示 300 行，共 ${rows.length} 行` : '', table);
+  const note = needle
+    ? `找到 ${found} 行${clipped ? '，先显示 300 行' : ''}`
+    : (clipped ? `先显示 300 行，共 ${rows.length} 行` : '');
+  return tableFrame(note, table);
 }
 
 function renderTable() {
@@ -857,7 +936,8 @@ function syncHits() {
     const needle = query.toLowerCase();
     const pool = state.diffChanges.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
     state.hits = needle ? pool.filter((change) => changeText(change).includes(needle)).map((change) => change.segments) : [];
-  } else state.hits = state.display === undefined ? [] : collectHits(state.display, query);
+  } else if (state.view === 'table') state.hits = tableHits(state.display, query);
+  else state.hits = state.display === undefined ? [] : collectHits(state.display, query);
   if (state.hit >= state.hits.length) state.hit = 0;
 }
 
