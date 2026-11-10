@@ -792,10 +792,22 @@ function renderDiff(diff) {
     look.className = 'pill look';
     look.textContent = '只看这一处';
     look.addEventListener('click', () => focusChange(change));
-    line.append(button, look);
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'pill look';
+    copy.textContent = '复制这一处';
+    copy.addEventListener('click', () => copyText(changeLine(change), '已复制这一处'));
+    line.append(button, look, copy);
     wrap.append(line);
   }
   return wrap;
+}
+
+function changeLine(change) {
+  const path = formatJq(change.segments);
+  if (change.kind === 'added') return `${path} 新增 ${compactJson(change.after)}`;
+  if (change.kind === 'removed') return `${path} 删除 ${compactJson(change.before)}`;
+  return `${path} ${compactJson(change.before)} → ${compactJson(change.after)}`;
 }
 
 function focusChange(change) {
