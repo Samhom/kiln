@@ -57,6 +57,7 @@ const els = {
   filter: document.querySelector('#filter'),
   filterForm: document.querySelector('#filter-form'),
   filterMsg: document.querySelector('#filter-msg'),
+  jumpFilter: document.querySelector('#jump-filter'),
   chips: document.querySelector('#chips'),
   summary: document.querySelector('#summary'),
   context: document.querySelector('#context'),
@@ -388,6 +389,7 @@ function renderSourceMeta() {
   const failed = Boolean(state.docs.a.text.trim() && state.docs.a.parsed && !state.docs.a.parsed.ok);
   const badFilter = Boolean(state.outcome && !state.outcome.ok);
   els.filterMsg.classList.toggle('is-error', failed || badFilter);
+  els.jumpFilter.hidden = !(badFilter && typeof state.outcome?.index === 'number' && state.outcome.index >= 0);
   if (!state.docs.a.text.trim()) els.filterMsg.textContent = '输入后会自动更新右边';
   else if (failed) els.filterMsg.textContent = '左边还不能解析，过滤先停着';
   else if (badFilter) els.filterMsg.textContent = state.outcome.error;
@@ -1031,6 +1033,16 @@ function focusHit(delta) {
   refresh();
 }
 
+function jumpFilter() {
+  const index = state.outcome?.index;
+  if (typeof index !== 'number' || index < 0) return;
+  const raw = els.filter.value;
+  const lead = raw.length - raw.trimStart().length;
+  const start = lead + index;
+  els.filter.focus();
+  els.filter.setSelectionRange(start, Math.min(raw.length, start + 1));
+}
+
 function jumpToError(side) {
   const doc = state.docs[side];
   const line = doc.parsed?.line;
@@ -1143,6 +1155,7 @@ document.querySelector('#clear-filter').addEventListener('click', () => {
 });
 els.jumpA.addEventListener('click', () => jumpToError('a'));
 els.jumpB.addEventListener('click', () => jumpToError('b'));
+els.jumpFilter.addEventListener('click', jumpFilter);
 document.querySelector('#tidy-a').addEventListener('click', () => tidy('a'));
 document.querySelector('#tidy-b').addEventListener('click', () => tidy('b'));
 document.querySelector('#clear-a').addEventListener('click', () => setText('a', ''));

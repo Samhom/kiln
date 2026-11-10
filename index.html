@@ -56,7 +56,10 @@
         <button class="pill primary" type="submit" title="留在下面，方便下次点开">记下来</button>
         <button class="pill" type="button" id="clear-filter">清除</button>
       </form>
-      <p class="filter-msg" id="filter-msg">输入后会自动更新右边</p>
+      <div class="msg-row filter-jump">
+        <p class="filter-msg" id="filter-msg">输入后会自动更新右边</p>
+        <button class="pill" type="button" id="jump-filter" hidden>跳到这个字符</button>
+      </div>
       <div class="chips" id="chips"></div>
       <details class="help">
         <summary>过滤怎么写</summary>

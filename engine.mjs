@@ -5,10 +5,15 @@ const MAX_DIFF = 400;
 const MAX_PIPES = 12;
 
 class FilterError extends Error {
-  constructor(message) {
+  constructor(message, index = -1) {
     super(message);
     this.name = 'FilterError';
+    this.index = index;
   }
+}
+
+function rejectAt(text, index, message) {
+  throw new FilterError(place(text, index, message), index);
 }
 
 export function typeName(value) {
@@ -228,13 +233,13 @@ function readString(text, index) {
         i += 6;
         continue;
       }
-      throw new FilterError(place(text, i, '这个转义窑不认识'));
+      rejectAt(text, i, '这个转义窑不认识');
     }
-    if (char === '\n' || char === '\r') throw new FilterError(place(text, i, '字符串没有结束'));
+    if (char === '\n' || char === '\r') rejectAt(text, i, '字符串没有结束');
     value += char;
     i += 1;
   }
-  throw new FilterError(place(text, index, '字符串没有结束'));
+  rejectAt(text, index, '字符串没有结束');
 }
 
 function tokenize(text) {
@@ -272,9 +277,9 @@ function tokenize(text) {
     }
     if (char === '-' || (char >= '0' && char <= '9')) {
       const match = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/.exec(text.slice(i));
-      if (!match) throw new FilterError(place(text, i, '这个数字写得不对'));
+      if (!match) rejectAt(text, i, '这个数字写得不对');
       const value = Number(match[0]);
-      if (!Number.isFinite(value)) throw new FilterError(place(text, i, '这个数字窑放不下'));
+      if (!Number.isFinite(value)) rejectAt(text, i, '这个数字窑放不下');
       tokens.push({type: 'number', value, index});
       i += match[0].length;
       continue;
@@ -285,7 +290,7 @@ function tokenize(text) {
       i += ident[0].length;
       continue;
     }
-    throw new FilterError(place(text, i, '这里有认不出的符号'));
+    rejectAt(text, i, '这里有认不出的符号');
   }
   tokens.push({type: 'eof', value: '', index: text.length});
   return tokens;
@@ -297,7 +302,7 @@ function parseFilter(text) {
   const peek = () => tokens[cursor];
   const expect = (type, message) => {
     const token = peek();
-    if (token.type !== type) throw new FilterError(place(text, token.index, message));
+    if (token.type !== type) rejectAt(text, token.index, message);
     cursor += 1;
     return token;
   };
@@ -316,26 +321,26 @@ function parseFilter(text) {
     }
     if (peek().type === 'number') {
       const token = expect('number', '这里需要下标');
-      if (!Number.isSafeInteger(token.value)) throw new FilterError(place(text, token.index, '下标要是整数，并且不能太大'));
+      if (!Number.isSafeInteger(token.value)) rejectAt(text, token.index, '下标要是整数，并且不能太大');
       expect('rbrack', '下标后面需要 ]');
       return {type: 'index', index: token.value};
     }
-    throw new FilterError(place(text, peek().index, '方括号里写数字、字符串，或留空表示展开'));
+    rejectAt(text, peek().index, '方括号里写数字、字符串，或留空表示展开');
   };
   const parsePath = () => {
     const start = peek();
     expect('dot', '路径从点开始，例如 .name');
-    if (peek().type === 'dot') throw new FilterError(place(text, peek().index, '暂不支持 ..'));
+    if (peek().type === 'dot') rejectAt(text, peek().index, '暂不支持 ..');
     const segs = [];
     const takeKey = () => {
-      if (peek().type !== 'ident') throw new FilterError(place(text, peek().index, '路径这里需要键名或方括号'));
+      if (peek().type !== 'ident') rejectAt(text, peek().index, '路径这里需要键名或方括号');
       segs.push({type: 'key', key: expect('ident', '路径这里需要键名').value});
     };
     if (peek().type === 'lbrack') segs.push(parseBracket());
     else if (peek().type === 'ident') takeKey();
     while (peek().type === 'dot' || peek().type === 'lbrack') {
       if (eat('dot')) {
-        if (peek().type === 'dot') throw new FilterError(place(text, peek().index, '暂不支持 ..'));
+        if (peek().type === 'dot') rejectAt(text, peek().index, '暂不支持 ..');
         if (peek().type === 'lbrack') segs.push(parseBracket());
         else takeKey();
       } else {
@@ -356,7 +361,7 @@ function parseFilter(text) {
       if (token.value === 'false') return false;
       return null;
     }
-    throw new FilterError(place(text, token.index, '这里需要字符串、数字、true、false 或 null'));
+    rejectAt(text, token.index, '这里需要字符串、数字、true、false 或 null');
   };
   const parseCond = () => {
     const path = parsePath();
@@ -375,19 +380,19 @@ function parseFilter(text) {
         return {type: 'select', cond};
       }
       if (token.value === 'keys' || token.value === 'length' || token.value === 'type') return {type: 'builtin', name: token.value};
-      throw new FilterError(place(text, token.index, `这里不认识 ${token.value}。路径从点开始，例如 .${token.value}`));
+      rejectAt(text, token.index, `这里不认识 ${token.value}。路径从点开始，例如 .${token.value}`);
     }
     if (token.type === 'dot') return parsePath();
-    throw new FilterError(place(text, token.index, '这里需要路径、select、keys、length 或 type'));
+    rejectAt(text, token.index, '这里需要路径、select、keys、length 或 type');
   };
   let expr = parseAtom();
   let pipes = 0;
   while (eat('pipe')) {
     pipes += 1;
-    if (pipes > MAX_PIPES) throw new FilterError('最多串 12 段');
+    if (pipes > MAX_PIPES) throw new FilterError('最多串 12 段', peek().index);
     expr = {type: 'pipe', left: expr, right: parseAtom()};
   }
-  if (peek().type !== 'eof') throw new FilterError(place(text, peek().index, '后面多出来一段'));
+  if (peek().type !== 'eof') rejectAt(text, peek().index, '后面多出来一段');
   return expr;
 }
 
@@ -519,7 +524,7 @@ export function runFilter(value, source) {
   try {
     return evaluate(parseFilter(text), [value]);
   } catch (error) {
-    if (error instanceof FilterError) return {ok: false, error: error.message};
+    if (error instanceof FilterError) return {ok: false, error: error.message, index: error.index};
     throw error;
   }
 }

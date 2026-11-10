@@ -57,6 +57,7 @@ test('filters the order, the log, and a Chinese key without executing text', () 
     const result = runFilter(order.value, source);
     assert.equal(result.ok, false, source);
   }
+  assert.equal(runFilter(order.value, '..name').index, 1);
   assert.equal(runFilter([1, 2], '.[] | select(. >= 2)').values[0], 2);
   assert.match(runFilter({name: '灰釉杯'}, 'select(.name ~= "杯")').values[0].name, /杯/);
 });
