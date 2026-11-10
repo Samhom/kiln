@@ -29,6 +29,7 @@ const state = {
     a: {text: '', parsed: null, note: ''},
     b: {text: '', parsed: null, note: ''}
   },
+  undo: {a: '', b: ''},
   outcome: null,
   display: undefined
 };
@@ -51,6 +52,8 @@ const els = {
   msgB: document.querySelector('#msg-b'),
   jumpA: document.querySelector('#jump-a'),
   jumpB: document.querySelector('#jump-b'),
+  undoA: document.querySelector('#undo-a'),
+  undoB: document.querySelector('#undo-b'),
   filter: document.querySelector('#filter'),
   filterForm: document.querySelector('#filter-form'),
   filterMsg: document.querySelector('#filter-msg'),
@@ -238,13 +241,26 @@ function parseSide(side) {
   refresh();
 }
 
-function setText(side, text, note = '') {
+function stash(side) {
+  const text = state.docs[side].text;
+  if (text) state.undo[side] = text;
+}
+
+function setText(side, text, note = '', options = {}) {
   const doc = state.docs[side];
+  if (!options.keepUndo && doc.text && doc.text !== text) stash(side);
   doc.text = text;
   doc.note = note;
   (side === 'a' ? els.textA : els.textB).value = text;
   window.clearTimeout(timers[side]);
   parseSide(side);
+}
+
+function undoText(side) {
+  const previous = state.undo[side];
+  if (!previous) return;
+  state.undo[side] = '';
+  setText(side, previous, '已撤销', {keepUndo: true});
 }
 
 function isOpen(pointer, depth, value) {
@@ -361,6 +377,8 @@ function renderSourceMeta() {
     badge.textContent = doc.parsed?.ok ? (doc.parsed.format === 'ndjson' ? 'NDJSON' : 'JSON') : '';
     lines.textContent = doc.text ? `${doc.text.split(/\n/).length} 行` : '';
     const jump = side === 'a' ? els.jumpA : els.jumpB;
+    const undo = side === 'a' ? els.undoA : els.undoB;
+    undo.hidden = !state.undo[side];
     msg.classList.toggle('is-error', Boolean(doc.text.trim() && doc.parsed && !doc.parsed.ok));
     jump.hidden = !(doc.text.trim() && doc.parsed && !doc.parsed.ok && doc.parsed.line);
     if (!doc.text.trim()) msg.textContent = '';
@@ -912,6 +930,8 @@ function applyFilter({rememberResult = false} = {}) {
 function loadSample(key) {
   const sample = samples[key];
   if (!sample) return;
+  stash('a');
+  stash('b');
   state.mode = sample.mode;
   state.view = sample.view;
   state.filter = sample.filter;
@@ -1127,7 +1147,11 @@ document.querySelector('#tidy-a').addEventListener('click', () => tidy('a'));
 document.querySelector('#tidy-b').addEventListener('click', () => tidy('b'));
 document.querySelector('#clear-a').addEventListener('click', () => setText('a', ''));
 document.querySelector('#clear-b').addEventListener('click', () => setText('b', ''));
+els.undoA.addEventListener('click', () => undoText('a'));
+els.undoB.addEventListener('click', () => undoText('b'));
 document.querySelector('#swap').addEventListener('click', () => {
+  stash('a');
+  stash('b');
   const a = state.docs.a.text;
   const b = state.docs.b.text;
   state.docs.a.note = '';
