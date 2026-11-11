@@ -12,6 +12,7 @@ const state = {
   find: '',
   hit: 0,
   hits: [],
+  rawHits: [],
   pendingScroll: false,
   selection: [],
   pick: {segments: [], value: undefined},
@@ -272,6 +273,7 @@ function stash(side) {
 function resetFind() {
   state.find = '';
   state.hit = -1;
+  state.rawHits = [];
   els.find.value = '';
 }
 
@@ -393,7 +395,7 @@ function renderShell() {
   els.treeTools.hidden = state.view !== 'tree' || state.display === undefined;
   els.rawTools.hidden = state.view !== 'raw' || state.display === undefined;
   els.toggleWrap.setAttribute('aria-pressed', String(state.wrap));
-  els.find.placeholder = state.view === 'diff' ? '路径或值，回车到下一处差异' : '键或值，回车到下一处';
+  els.find.placeholder = state.view === 'diff' ? '路径或值，回车到下一处差异' : state.view === 'raw' ? '在这段文本里找，回车到下一处' : '键或值，回车到下一处';
   els.clearFind.hidden = !state.find.trim();
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
@@ -794,12 +796,43 @@ function renderTable() {
   return renderListTable([value]);
 }
 
+function rawText() {
+  const full = JSON.stringify(state.display, null, 2) ?? '';
+  return full.length > 200000 ? full.slice(0, 200000) : full;
+}
+
+function collectRawHits(text, query) {
+  const needle = query.toLowerCase();
+  if (!needle) return [];
+  const lower = text.toLowerCase();
+  const hits = [];
+  let from = 0;
+  while (hits.length < 200) {
+    const at = lower.indexOf(needle, from);
+    if (at < 0) break;
+    hits.push(at);
+    from = at + Math.max(1, needle.length);
+  }
+  return hits;
+}
+
 function renderRaw() {
   const wrap = document.createElement('div');
   wrap.className = 'raw-wrap';
   const pre = document.createElement('pre');
-  const full = JSON.stringify(state.display, null, 2);
-  pre.textContent = full.length > 200000 ? `${full.slice(0, 200000)}\n… 后面省略了，复制值仍是完整结果` : full;
+  const shown = rawText();
+  const full = JSON.stringify(state.display, null, 2) ?? '';
+  const query = state.find.trim();
+  const start = state.hit >= 0 ? state.rawHits[state.hit] : -1;
+  if (query && start >= 0) {
+    const end = start + query.length;
+    pre.append(document.createTextNode(shown.slice(0, start)));
+    const mark = document.createElement('mark');
+    mark.dataset.current = 'true';
+    mark.textContent = shown.slice(start, end);
+    pre.append(mark, document.createTextNode(shown.slice(end)));
+  } else pre.append(document.createTextNode(shown));
+  if (full.length > 200000) pre.append(document.createTextNode('\n… 后面省略了，复制值仍是完整结果'));
   if (state.wrap) pre.classList.add('is-wrap');
   wrap.append(pre);
   return wrap;
@@ -948,6 +981,12 @@ function renderSummary(diff) {
 
 function syncHits() {
   const query = state.find.trim();
+  if (state.view === 'raw') {
+    state.rawHits = state.display === undefined ? [] : collectRawHits(rawText(), query);
+    if (state.hit >= state.rawHits.length) state.hit = 0;
+    return;
+  }
+  state.rawHits = [];
   if (state.view === 'diff') {
     const needle = query.toLowerCase();
     const pool = state.diffChanges.filter((change) => state.diffKind === 'all' || change.kind === state.diffKind);
@@ -958,6 +997,11 @@ function syncHits() {
 }
 
 function revealHit() {
+  if (state.view === 'raw') {
+    if (state.rawHits[state.hit] == null) return;
+    state.pendingScroll = true;
+    return;
+  }
   const segments = state.hits[state.hit];
   if (!segments) return;
   if (state.view === 'diff') {
@@ -974,7 +1018,6 @@ function revealHit() {
   }
   state.selection = segments.map((seg) => ({...seg}));
   state.pick = {segments: state.selection, value: valueAt(state.display, state.selection)};
-  if (state.view === 'raw') state.view = 'tree';
   state.pendingScroll = true;
 }
 
@@ -986,8 +1029,9 @@ function renderStage() {
   state.diffChanges = diff?.changes || [];
   syncHits();
   const query = state.find.trim();
-  const capped = state.hits.length === 200 ? '，已到上限' : '';
-  els.findCount.textContent = !query ? '' : state.hits.length ? (state.hit < 0 ? `${state.hits.length} 处${capped}` : `${state.hit + 1} / ${state.hits.length}${capped}`) : '没有找到';
+  const pool = state.view === 'raw' ? state.rawHits : state.hits;
+  const capped = pool.length === 200 ? '，已到上限' : '';
+  els.findCount.textContent = !query ? '' : pool.length ? (state.hit < 0 ? `${pool.length} 处${capped}` : `${state.hit + 1} / ${pool.length}${capped}`) : '没有找到';
   renderPath();
   renderSummary(diff);
   let view;
@@ -1156,9 +1200,10 @@ function insertSpaces(element) {
 
 function focusHit(delta) {
   syncHits();
-  if (!state.hits.length) return;
-  if (state.hit < 0) state.hit = delta < 0 ? state.hits.length - 1 : 0;
-  else state.hit = (state.hit + delta + state.hits.length) % state.hits.length;
+  const pool = state.view === 'raw' ? state.rawHits : state.hits;
+  if (!pool.length) return;
+  if (state.hit < 0) state.hit = delta < 0 ? pool.length - 1 : 0;
+  else state.hit = (state.hit + delta + pool.length) % pool.length;
   revealHit();
   refresh();
 }
