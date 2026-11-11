@@ -52,7 +52,7 @@
       <textarea id="text-a" spellcheck="false" autocomplete="off" aria-label="这份 JSON" placeholder="把 JSON 贴在这里，或把文件拖进来"></textarea>
       <form class="filter" id="filter-form">
         <label for="filter">过滤</label>
-        <input id="filter" type="text" spellcheck="false" autocomplete="off" placeholder=".items[] | select(.price >= 80)" aria-describedby="filter-msg">
+        <input id="filter" type="text" spellcheck="false" autocomplete="off" placeholder=".items[] | select(.price >= 80)" aria-describedby="filter-msg" title="上方向键翻最近记下的过滤，下方向键回到正在写的">
         <button class="pill primary" type="submit" title="留在下面，方便下次点开">记下来</button>
         <button class="pill" type="button" id="clear-filter">清除</button>
       </form>

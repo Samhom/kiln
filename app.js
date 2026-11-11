@@ -9,6 +9,8 @@ const state = {
   mode: 'view',
   view: 'tree',
   filter: '',
+  filterDraft: '',
+  filterCursor: -1,
   find: '',
   hit: 0,
   hits: [],
@@ -1094,7 +1096,8 @@ function renderNoMatch() {
   return wrap;
 }
 
-function applyFilter({rememberResult = false} = {}) {
+function applyFilter({rememberResult = false, keepCursor = false} = {}) {
+  if (!keepCursor) state.filterCursor = -1;
   if (state.glance) {
     state.glance = false;
     state.docs.a.note = '';
@@ -1335,7 +1338,24 @@ els.filterForm.addEventListener('submit', (event) => {
   window.clearTimeout(timers.filter);
   applyFilter({rememberResult: true});
 });
+els.filter.addEventListener('keydown', (event) => {
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+  if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+  const recent = readRecent();
+  if (!recent.length) return;
+  if (state.filterCursor < 0 && event.key === 'ArrowDown') return;
+  event.preventDefault();
+  if (state.filterCursor < 0) state.filterDraft = els.filter.value;
+  const next = event.key === 'ArrowUp' ? state.filterCursor + 1 : state.filterCursor - 1;
+  if (next >= recent.length) return;
+  state.filterCursor = next;
+  els.filter.value = next < 0 ? state.filterDraft : recent[next];
+  window.clearTimeout(timers.filter);
+  applyFilter({keepCursor: true});
+});
 els.filter.addEventListener('input', () => {
+  state.filterCursor = -1;
+  state.filterDraft = els.filter.value;
   window.clearTimeout(timers.filter);
   els.filterMsg.textContent = '正在更新结果';
   els.filterMsg.classList.remove('is-error');
