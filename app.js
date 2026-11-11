@@ -1044,6 +1044,7 @@ function renderStage() {
   state.diffChanges = diff?.changes || [];
   syncHits();
   const query = state.find.trim();
+  els.clearFind.hidden = !query;
   const pool = state.view === 'raw' ? state.rawHits : state.hits;
   const capped = pool.length === 200 ? '，已到上限' : '';
   els.findCount.textContent = !query ? '' : pool.length ? (state.hit < 0 ? `${pool.length} 处${capped}` : `${state.hit + 1} / ${pool.length}${capped}`) : '没有找到';
