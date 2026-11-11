@@ -845,6 +845,12 @@ function renderDiff(diff) {
     wrap.append(emptyNote(query ? '没有找到。' : '这一类里没有差异。'));
     return wrap;
   }
+  const copyAll = document.createElement('button');
+  copyAll.type = 'button';
+  copyAll.className = 'pill';
+  copyAll.textContent = `复制这 ${visible.length} 处`;
+  copyAll.addEventListener('click', () => copyText(visible.map(changeLine).join('\n'), '已复制这些差异'));
+  filters.append(copyAll);
   const current = state.hit >= 0 && state.hits[state.hit] ? formatPointer(state.hits[state.hit]) : '';
   for (const change of visible) {
     const line = document.createElement('div');
