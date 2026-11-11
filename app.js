@@ -67,6 +67,7 @@ const els = {
   copyState: document.querySelector('#copy-state'),
   find: document.querySelector('#find'),
   findCount: document.querySelector('#find-count'),
+  clearFind: document.querySelector('#clear-find'),
   stage: document.querySelector('#stage'),
   treeTools: document.querySelector('#tree-tools'),
   rawTools: document.querySelector('#raw-tools'),
@@ -268,9 +269,17 @@ function stash(side) {
   if (text) state.undo[side] = text;
 }
 
+function resetFind() {
+  state.find = '';
+  state.hit = -1;
+  els.find.value = '';
+}
+
 function setText(side, text, note = '', options = {}) {
   const doc = state.docs[side];
-  if (!options.keepUndo && doc.text && doc.text !== text) stash(side);
+  const replacing = doc.text !== text;
+  if (!options.keepUndo && doc.text && replacing) stash(side);
+  if (replacing) resetFind();
   doc.text = text;
   doc.note = note;
   (side === 'a' ? els.textA : els.textB).value = text;
@@ -385,6 +394,7 @@ function renderShell() {
   els.rawTools.hidden = state.view !== 'raw' || state.display === undefined;
   els.toggleWrap.setAttribute('aria-pressed', String(state.wrap));
   els.find.placeholder = state.view === 'diff' ? '路径或值，回车到下一处差异' : '键或值，回车到下一处';
+  els.clearFind.hidden = !state.find.trim();
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
@@ -1047,6 +1057,7 @@ function loadSample(key) {
   if (!sample) return;
   stash('a');
   stash('b');
+  resetFind();
   state.mode = sample.mode;
   state.view = sample.view;
   state.filter = sample.filter;
@@ -1278,6 +1289,7 @@ els.undoB.addEventListener('click', () => undoText('b'));
 document.querySelector('#swap').addEventListener('click', () => {
   stash('a');
   stash('b');
+  resetFind();
   const a = state.docs.a.text;
   const b = state.docs.b.text;
   state.docs.a.note = '';
@@ -1317,6 +1329,12 @@ els.find.addEventListener('input', () => {
   renderStage();
 });
 els.find.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    resetFind();
+    renderStage();
+    return;
+  }
   if (event.key !== 'Enter') return;
   event.preventDefault();
   focusHit(event.shiftKey ? -1 : 1);
@@ -1338,6 +1356,10 @@ els.toggleWrap.addEventListener('click', () => {
 });
 document.querySelector('#find-prev').addEventListener('click', () => focusHit(-1));
 document.querySelector('#find-next').addEventListener('click', () => focusHit(1));
+els.clearFind.addEventListener('click', () => {
+  resetFind();
+  renderStage();
+});
 document.addEventListener('keydown', (event) => {
   const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
   if (!typing && stepTree(event.key)) {
