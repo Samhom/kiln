@@ -402,6 +402,14 @@ function renderShell() {
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
 }
 
+function caretPlace(element) {
+  const pos = element.selectionStart ?? 0;
+  const text = element.value;
+  const line = text.slice(0, pos).split('\n').length;
+  const column = pos - text.lastIndexOf('\n', Math.max(0, pos - 1));
+  return {line, column};
+}
+
 function renderSourceMeta() {
   for (const side of ['a', 'b']) {
     const doc = state.docs[side];
@@ -409,7 +417,12 @@ function renderSourceMeta() {
     const lines = side === 'a' ? els.linesA : els.linesB;
     const msg = side === 'a' ? els.msgA : els.msgB;
     badge.textContent = doc.parsed?.ok ? (doc.parsed.format === 'ndjson' ? 'NDJSON' : 'JSON') : '';
-    lines.textContent = doc.text ? `${doc.text.split(/\n/).length} 行` : '';
+    const area = side === 'a' ? els.textA : els.textB;
+    if (!doc.text) lines.textContent = '';
+    else {
+      const place = caretPlace(area);
+      lines.textContent = `${doc.text.split(/\n/).length} 行 · 第 ${place.line} 行第 ${place.column} 列`;
+    }
     const jump = side === 'a' ? els.jumpA : els.jumpB;
     const undo = side === 'a' ? els.undoA : els.undoB;
     undo.hidden = !state.undo[side];
@@ -1232,6 +1245,7 @@ function jumpToError(side) {
   area.setSelectionRange(start + Math.min(length, column - 1), start + length);
   const lineHeight = Number.parseFloat(getComputedStyle(area).lineHeight) || 21;
   area.scrollTop = Math.max(0, (line - 3) * lineHeight);
+  renderSourceMeta();
 }
 
 function stepTree(key) {
@@ -1291,6 +1305,10 @@ function watchText(side) {
       insertSpaces(element);
     }
   });
+  const placeCaret = () => renderSourceMeta();
+  element.addEventListener('keyup', placeCaret);
+  element.addEventListener('click', placeCaret);
+  element.addEventListener('select', placeCaret);
 }
 
 els.modeView.addEventListener('click', () => {
