@@ -156,6 +156,16 @@ textarea { flex: 1; min-height: 160px; resize: none; padding: 12px; }
 
 .stage-wrap { padding: 12px; }
 .stage-bar { justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+.filter-on {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--gold);
+  font-size: 12px;
+}
+.filter-on code { font-family: var(--mono); color: var(--ink); overflow-wrap: anywhere; }
 #summary, .context { margin: 0; }
 .context { color: var(--gold); font-size: 12px; }
 #summary { text-align: right; }

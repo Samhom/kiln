@@ -64,6 +64,7 @@ const els = {
   chips: document.querySelector('#chips'),
   summary: document.querySelector('#summary'),
   context: document.querySelector('#context'),
+  filterOn: document.querySelector('#filter-on'),
   steps: document.querySelector('.steps'),
   crumbs: document.querySelector('#crumbs'),
   pathJq: document.querySelector('#path-jq'),
@@ -403,7 +404,30 @@ function renderShell() {
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
+  paintFilterOn();
   paintSteps();
+}
+
+function paintFilterOn() {
+  const text = state.filter.trim();
+  const on = Boolean(text && text !== '.' && state.docs.a.parsed?.ok && state.view !== 'diff');
+  els.filterOn.hidden = !on;
+  els.filterOn.replaceChildren();
+  if (!on) return;
+  const label = document.createElement('span');
+  label.textContent = '正在过滤';
+  const code = document.createElement('code');
+  code.textContent = text.length > 80 ? `${text.slice(0, 77)}…` : text;
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'pill';
+  clear.textContent = '看回全部';
+  clear.addEventListener('click', () => {
+    els.filter.value = '';
+    window.clearTimeout(timers.filter);
+    applyFilter();
+  });
+  els.filterOn.append(label, code, clear);
 }
 
 function paintSteps() {
