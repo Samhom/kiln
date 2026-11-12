@@ -64,6 +64,7 @@ const els = {
   chips: document.querySelector('#chips'),
   summary: document.querySelector('#summary'),
   context: document.querySelector('#context'),
+  steps: document.querySelector('.steps'),
   crumbs: document.querySelector('#crumbs'),
   pathJq: document.querySelector('#path-jq'),
   pathPointer: document.querySelector('#path-pointer'),
@@ -402,6 +403,26 @@ function renderShell() {
   if (state.mode === 'compare' && state.view === 'diff') els.context.textContent = '这一页比较左右两份原文，不使用过滤。';
   else if (state.mode === 'compare') els.context.textContent = '树形、表格和文本只看左边这份，并套用过滤。';
   else els.context.textContent = '右边是左边这份 JSON 的结果。';
+  paintSteps();
+}
+
+function paintSteps() {
+  const doc = state.docs.a;
+  const other = state.docs.b;
+  const filter = state.filter.trim();
+  const filtering = Boolean(filter && filter !== '.');
+  let text = '先贴上或打开 JSON，也可以点上面的例子。';
+  if (!doc.text.trim()) text = '先贴上或打开 JSON，也可以点上面的例子。';
+  else if (doc.parsed && !doc.parsed.ok) text = '左边标出了出错的那一行，点「跳到出错处」就能选中它。';
+  else if (state.mode === 'compare' && state.view === 'diff' && !other.text.trim()) text = '再贴上另一份，两边就会按字段比出来。';
+  else if (state.mode === 'compare' && state.view === 'diff' && other.parsed && !other.parsed.ok) text = '另一份还不能解析，先修好那一行。';
+  else if (state.mode === 'compare' && state.view === 'diff') text = '点「只看这一处」看单个差异，或把当前列表一次抄走。';
+  else if (state.outcome && !state.outcome.ok) text = '过滤还没写对，点「跳到这个字符」看是哪一位。';
+  else if (filtering && state.outcome?.values.length === 0) text = '没有匹配。改条件，或清除后看回全部。';
+  else if (filtering) text = '右边已经按过滤收过。清除之后，路径才对得上整份原文。';
+  else if (!state.selection.length) text = '在右边点一行，上面就会出现可以复制的路径。';
+  else text = '路径已经写在上面，可以复制，或用它再过滤一次。';
+  els.steps.textContent = text;
 }
 
 function caretPlace(element) {
@@ -1049,6 +1070,7 @@ function renderStage() {
   const capped = pool.length === 200 ? '，已到上限' : '';
   els.findCount.textContent = !query ? '' : pool.length ? (state.hit < 0 ? `${pool.length} 处${capped}` : `${state.hit + 1} / ${pool.length}${capped}`) : '没有找到';
   renderPath();
+  paintSteps();
   renderSummary(diff);
   let view;
   if (!state.docs.a.text.trim() && state.view !== 'diff') view = renderEmpty();
