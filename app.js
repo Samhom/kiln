@@ -21,6 +21,7 @@ const state = {
   sort: null,
   collapsed: new Set(),
   opened: new Set(),
+  openStrings: new Set(),
   expansion: null,
   diffKind: 'all',
   glance: false,
@@ -235,6 +236,7 @@ function invalidate() {
   state.selection = [];
   state.collapsed = new Set();
   state.opened = new Set();
+  state.openStrings = new Set();
   state.expansion = null;
   state.sort = null;
   state.hit = 0;
@@ -610,7 +612,28 @@ function drawTree(value, segments, depth, parent, hitSet, current, budget) {
   main.append(key, shown);
   main.addEventListener('click', () => choose(segments, value));
   row.append(twist, main);
+  if (typeof value === 'string' && value.length > 120) {
+    const expanded = state.openStrings.has(pointer);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'pill string-toggle';
+    toggle.textContent = expanded ? '收起' : '全文';
+    toggle.addEventListener('click', () => {
+      if (expanded) state.openStrings.delete(pointer);
+      else state.openStrings.add(pointer);
+      renderStage();
+    });
+    row.append(toggle);
+  }
   parent.append(row);
+  if (typeof value === 'string' && value.length > 120 && state.openStrings.has(pointer)) {
+    const full = document.createElement('pre');
+    full.className = 'string-full';
+    full.style.setProperty('--depth', String(depth));
+    const cap = 8000;
+    full.textContent = value.length > cap ? `${value.slice(0, cap)}\n… 还有 ${value.length - cap} 个字，复制值仍是全文` : value;
+    parent.append(full);
+  }
   if (!open) return;
   const entries = Array.isArray(value)
     ? value.map((item, index) => ({seg: {type: 'index', index}, item}))
@@ -1161,6 +1184,7 @@ function applyFilter({rememberResult = false, keepCursor = false} = {}) {
     state.expansion = null;
     state.collapsed = new Set();
     state.opened = new Set();
+    state.openStrings = new Set();
   }
   compute();
   if (rememberResult && state.outcome?.ok) remember(state.filter);

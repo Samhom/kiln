@@ -209,6 +209,15 @@ mark { background: #e6c27a; color: #1a120e; padding: 0 1px; border-radius: 2px; 
 .v[data-kind="boolean"] { color: var(--moss); }
 .v[data-kind="null"] { color: var(--faint); }
 .v.dim { color: var(--muted); }
+.string-toggle { margin-top: 2px; padding: 0 6px; font-size: 11px; }
+.string-full {
+  margin: 0 12px 8px calc(28px + var(--depth) * 16px);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--glaze);
+  font-family: var(--mono);
+  font-size: 12px;
+}
 .more { margin: 6px 0 6px calc(28px + var(--depth) * 16px); color: var(--gold); font-size: 12px; }
 
 .table-wrap { overflow: auto; max-height: 100%; }
