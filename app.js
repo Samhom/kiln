@@ -696,8 +696,10 @@ function headerCell(label, sort) {
   button.type = 'button';
   const active = state.sort && state.sort.index === sort.index && state.sort.key === sort.key;
   button.textContent = label + (active ? (state.sort.dir < 0 ? ' ↓' : ' ↑') : '');
+  button.title = active && state.sort.dir < 0 ? '再点一次回到原来的顺序' : '按这一列排序';
   button.addEventListener('click', () => {
-    state.sort = active ? {...sort, dir: -state.sort.dir} : {...sort, dir: 1};
+    if (active && state.sort.dir < 0) state.sort = null;
+    else state.sort = active ? {...sort, dir: -1} : {...sort, dir: 1};
     renderStage();
   });
   th.append(button);
