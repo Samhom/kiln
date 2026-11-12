@@ -24,6 +24,7 @@ const state = {
   openStrings: new Set(),
   expansion: null,
   diffKind: 'all',
+  pair: '',
   glance: false,
   treeRows: [],
   follow: false,
@@ -1010,10 +1011,44 @@ function renderDiff(diff) {
     copy.className = 'pill look';
     copy.textContent = '复制这一处';
     copy.addEventListener('click', () => copyText(changeLine(change), '已复制这一处'));
-    line.append(button, look, copy);
+    const pointer = formatPointer(change.segments);
+    const paired = state.pair === pointer;
+    const pair = document.createElement('button');
+    pair.type = 'button';
+    pair.className = 'pill look';
+    pair.textContent = paired ? '收起对照' : '对照';
+    pair.setAttribute('aria-expanded', String(paired));
+    pair.addEventListener('click', () => {
+      state.pair = paired ? '' : pointer;
+      renderStage();
+    });
+    line.append(button, look, copy, pair);
+    if (paired) {
+      const both = document.createElement('div');
+      both.className = 'pair';
+      if (change.kind !== 'added') both.append(pairPane('这份', change.before));
+      if (change.kind !== 'removed') both.append(pairPane('另一份', change.after));
+      line.append(both);
+    }
     wrap.append(line);
   }
   return wrap;
+}
+
+function pairBody(value) {
+  const text = JSON.stringify(value, null, 2) ?? '';
+  return text.length > 4000 ? `${text.slice(0, 4000)}\n… 后面省略了` : text;
+}
+
+function pairPane(title, value) {
+  const pane = document.createElement('div');
+  const heading = document.createElement('p');
+  heading.className = 'pair-title';
+  heading.textContent = title;
+  const pre = document.createElement('pre');
+  pre.textContent = pairBody(value);
+  pane.append(heading, pre);
+  return pane;
 }
 
 function changeLine(change) {

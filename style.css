@@ -250,7 +250,18 @@ pre {
 }
 
 .diff { display: flex; flex-direction: column; }
-.diff-line { display: flex; align-items: flex-start; gap: 8px; border-bottom: 1px solid var(--line); }
+.diff-line { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.pair { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 0 8px; }
+.pair-title { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.pair pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+}
 .diff-line[data-current="true"] { background: rgba(255, 106, 44, 0.12); }
 .diff-row {
   display: grid;
